@@ -10,8 +10,8 @@ module.exports = async (req, res) => {
     res.statusCode = 405;
     return res.end(JSON.stringify({ error: 'method_not_allowed', message: 'Lecture seule : GET uniquement' }));
   }
-  const raw = req.query.path;
-  const path = (Array.isArray(raw) ? raw : [raw || '']).join('/');
+  const parsed = new URL(req.url || '/', 'http://localhost');
+  const path = parsed.pathname.replace(/^\/api\//, '').replace(/\/+$/, '');
   if (!ALLOWED.has(path)) {
     res.statusCode = 404;
     return res.end(JSON.stringify({ error: 'not_found', message: 'Route inconnue' }));
@@ -27,7 +27,7 @@ module.exports = async (req, res) => {
   }
   let url = `${base}/api/${path}`;
   if (path === 'dashboard') {
-    const period = String(req.query.period || '7d');
+    const period = parsed.searchParams.get('period') || '7d';
     if (!PERIODS.has(period)) {
       res.statusCode = 400;
       return res.end(JSON.stringify({ error: 'bad_period', message: 'period doit valoir 7d, 30d ou all' }));
