@@ -1,0 +1,6 @@
+tests
+app/*.py
+Dockerfile
+compose.yaml
+nginx
+requirements.txt

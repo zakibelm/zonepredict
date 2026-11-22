@@ -1,0 +1,1 @@
+"""ZonePredict dashboard autonome."""
