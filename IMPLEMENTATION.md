@@ -159,7 +159,7 @@ Le navigateur actualise l'interface toutes les cinq minutes, mais **la collecte 
 | Gate | Critère de validation | Statut de ce livrable |
 |---|---|---|
 | G0 | Code + tests unitaires | **PASS (20 tests)** |
-| G1 | Spécification OpenAPI réelle lue, réponse `vue=courses` vérifiée | **NON TESTÉ** (réseau inaccessible) |
+| G1 | Spécification OpenAPI réelle lue, réponse `vue=courses` vérifiée | **PARTIEL** : OpenAPI et workflow n8n lus (22 nov. 2026) ; `vue=courses` = `{ok,total,colonnes,courses:[[date,heure,zone,vehicule,service,statut],…]}`, géré par le client. Réponse réelle authentifiée encore à vérifier sur le VPS |
 | G2 | Authentification Bearer en production (200 / 401), jeton renouvelé | **NON TESTÉ** |
 | G3 | Backfill complet, quotas, doublons et filtres vérifiés sur la base réelle | **NON TESTÉ** |
 | G4 | Collecte 5 min pendant 24h, pas de faux zéro, fraîcheur visible | **NON TESTÉ** |

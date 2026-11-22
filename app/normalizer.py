@@ -53,6 +53,22 @@ def unpack(payload: Any) -> list[dict]:
             raise SchemaError("Réponse API sans collection de courses reconnue; contrat à adapter")
     else:
         raise SchemaError("Réponse API non JSON/collection")
+    # Contrat réel n8n (DataTaxi - API lecture) : lignes positionnelles + clé "colonnes".
+    cols=payload.get("colonnes") if isinstance(payload,dict) else None
+    if cols is not None:
+        if not (isinstance(cols,list) and cols and all(isinstance(c,str) for c in cols)):
+            raise SchemaError("Clé 'colonnes' invalide")
+        converted=[]
+        for r in items:
+            if isinstance(r,(list,tuple)):
+                if len(r)>len(cols):
+                    raise SchemaError("Ligne de course plus longue que 'colonnes'")
+                converted.append(dict(zip(cols,r)))
+            elif isinstance(r,dict):
+                converted.append(r)
+            else:
+                raise SchemaError("Un élément de course n'est ni une liste ni un objet")
+        items=converted
     if any(not isinstance(r,dict) for r in items):
         raise SchemaError("Un élément de course n'est pas un objet")
     return items

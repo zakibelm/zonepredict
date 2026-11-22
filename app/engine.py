@@ -36,6 +36,8 @@ class DataTaxiReader:
         except httpx.HTTPError as exc:
             raise ApiUnavailable(f"Réseau API indisponible ({exc.__class__.__name__})") from exc
         rows=unpack(payload)
+        if isinstance(payload,dict) and isinstance(payload.get("total"),int) and not isinstance(payload.get("total"),bool) and payload["total"]>len(rows):
+            raise ApiUnavailable("Résultat tronqué : total supérieur aux lignes reçues; augmenter la limite")
         if len(rows)>=s.max_rows_per_day:
             raise ApiUnavailable("Résultat égal à la limite : pagination/exhaustivité non prouvée; augmenter limite ou implémenter pagination")
         if isinstance(payload,dict):
