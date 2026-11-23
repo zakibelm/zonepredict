@@ -24,6 +24,40 @@ def _category_counts(events):
     n=sum(values.values())
     return [{"type":k,"calls":v,"share":round(100*v/n,1) if n else 0} for k,v in values.most_common()]
 
+def _cell(z,b,group,hour):
+    """Une cellule zone × tranche de dix minutes, règles de confiance validées."""
+    dates=sorted({e["event_date"] for e in group})
+    dest=[e["destination_zone"] for e in group]
+    known={x for x in dest if x}
+    if len(dates)<2 or len(known)>1:
+        confidence="Faible"
+        why="Une seule date distincte" if len(dates)<2 else "Destinations connues divergentes"
+    elif len(known)==1 and all(dest):
+        confidence="Fort";why="Au moins deux dates et destination identique connue"
+    else:
+        confidence="Moyen";why="Au moins deux dates; destination absente ou partiellement connue"
+    dc=Counter("Inconnue" if x is None else x for x in dest)
+    per_date=Counter(e["event_date"] for e in group)
+    return {"zone":z,"bin":b,"start":f"{hour:02d}:{b*10:02d}",
+      "end":f"{(hour+((b+1)//6))%24:02d}:{((b+1)%6)*10:02d}",
+      "occurrences":len(group),"distinct_dates":len(dates),"confidence":confidence,
+      "confidence_reason":why,"destinations":[{"zone":d,"count":c,"share":round(c*100/len(group),1)} for d,c in dc.most_common()],
+      "historical_dates":dates,"dates_detail":[{"date":d,"count":per_date[d],"times":sorted(e["event_time"][:8] for e in group if e["event_date"]==d)} for d in dates]}
+
+def recurrence_matrix(history,hour,weekday=None,before_date=None):
+    """Récurrences historiques pour une heure (et un jour de semaine optionnel), sans snapshot.
+    weekday : 0=lundi … 6=dimanche ; None = tous les jours. before_date exclut ce jour et les suivants."""
+    observed={}
+    for e in history:
+        if not e["eligible"] or not e["request_zone"]:continue
+        if before_date and e["event_date"]>=before_date:continue
+        if int(e["event_time"][:2])!=hour:continue
+        if weekday is not None and datetime.strptime(e["event_date"],"%Y-%m-%d").weekday()!=weekday:continue
+        observed.setdefault((e["request_zone"],int(e["event_time"][3:5])//10),[]).append(e)
+    matrix=[_cell(z,b,g,hour) for (z,b),g in observed.items()]
+    matrix.sort(key=lambda x:(int(x["zone"]),x["bin"]))
+    return matrix
+
 def make_forecast(history,target_local,issued_local):
     """historique déjà découpé strictement avant issued_local par couche DB."""
     tz=target_local.tzinfo
@@ -39,24 +73,7 @@ def make_forecast(history,target_local,issued_local):
         minute=int(e["event_time"][3:5]);b=minute//10
         key=(e["request_zone"],b)
         observed.setdefault(key,[]).append(e)
-    matrix=[]
-    for (z,b),group in observed.items():
-        dates=sorted({e["event_date"] for e in group})
-        dest=[e["destination_zone"] for e in group]
-        known={x for x in dest if x}
-        if len(dates)<2 or len(known)>1:
-            confidence="Faible"
-            why="Une seule date distincte" if len(dates)<2 else "Destinations connues divergentes"
-        elif len(known)==1 and all(dest):
-            confidence="Fort";why="Au moins deux dates et destination identique connue"
-        else:
-            confidence="Moyen";why="Au moins deux dates; destination absente ou partiellement connue"
-        dc=Counter("Inconnue" if x is None else x for x in dest)
-        matrix.append({"zone":z,"bin":b,"start":f"{hour:02d}:{b*10:02d}",
-          "end":f"{(hour+((b+1)//6))%24:02d}:{((b+1)%6)*10:02d}",
-          "occurrences":len(group),"distinct_dates":len(dates),"confidence":confidence,
-          "confidence_reason":why,"destinations":[{"zone":d,"count":c,"share":round(c*100/len(group),1)} for d,c in dc.most_common()],
-          "historical_dates":dates})
+    matrix=[_cell(z,b,group,hour) for (z,b),group in observed.items()]
     matrix.sort(key=lambda x:(int(x["zone"]),x["bin"]))
     zoneScores={}
     for m in matrix:

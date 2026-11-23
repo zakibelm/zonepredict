@@ -35,6 +35,20 @@
         </div>
       </header>
       <div id="connection" class="connection is-warn" role="status" aria-live="polite">Connexion API non vérifiée — chargement des données...</div>
+      <section class="panel placement-panel" id="placement">
+        <div class="panel-head"><div><div class="micro">MON PLACEMENT</div><h2 id="pl-title">Où se positionner</h2></div><span id="pl-tag" class="pill muted">Chargement</span></div>
+        <div class="pl-controls" role="group" aria-label="Choix du jour et de l’heure">
+          <div id="pl-days" class="pl-days"></div>
+          <label class="control-label" for="pl-hour">Heure</label><select id="pl-hour" aria-label="Heure recherchée"></select>
+          <button id="pl-prev" class="refresh" type="button" aria-label="Heure précédente">◀</button><button id="pl-next" class="refresh" type="button" aria-label="Heure suivante">▶</button>
+          <select id="pl-seg" aria-label="Période historique utilisée"><option value="weekday">Même jour de la semaine</option><option value="all">Tous les jours</option></select>
+          <button id="pl-now" class="refresh" type="button">Maintenant</button>
+        </div>
+        <div id="pl-header" class="pl-header"></div>
+        <div class="matrix-overflow" id="pl-matrix"><div class="empty">Chargement…</div></div>
+        <div class="pl-legend"><span><i class="lg lg-1"></i> peu</span><span><i class="lg lg-2"></i> moyen</span><span><i class="lg lg-3"></i> beaucoup</span><span><i class="lg lg-red"></i> Fort (≥2 dates, destination stable)</span><span>Cellule vide ≠ zéro appel</span></div>
+        <div id="pl-table" class="table-wrap"></div>
+      </section>
       <section class="kpis" aria-label="Indicateurs clés">
         <article class="kpi"><div class="kpi-icon">▤</div><div class="kpi-label">Événements observés</div><div id="k-total" class="kpi-val">—</div><div class="kpi-caption">Période sélectionnée</div></article>
         <article class="kpi"><div class="kpi-icon">◉</div><div class="kpi-label">Appels admissibles</div><div id="k-eligible" class="kpi-val">—</div><div class="kpi-caption">Exclusions séparées</div></article>

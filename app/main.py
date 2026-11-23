@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
 from . import storage
+from .predict import recurrence_matrix
 from .engine import heartbeat,backfill,DataTaxiReader
 
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
@@ -108,6 +109,30 @@ def dashboard(period:str=Query("7d",pattern="^(today|yesterday|week|month|7d|30d
       "evaluations":evaluations[:12],
       "source_caution":"Aucune destination inventée. Pas de zéro imputé aux créneaux sans capture. Les prévisions sont figées à :50."
     }
+
+@app.get("/api/placement")
+def placement(weekday:int|None=Query(None,ge=0,le=6),hour:int|None=Query(None,ge=0,le=23),segment:str=Query("weekday",pattern="^(weekday|all)$")):
+    """Bulletin « Mon placement » : récurrences historiques pour un jour de semaine et une heure,
+    consultables sans snapshot. Par défaut : jour courant et prochaine heure civile."""
+    now=datetime.now(settings.timezone)
+    nxt=(now.replace(minute=0,second=0,microsecond=0)+timedelta(hours=1))
+    wd=nxt.weekday() if weekday is None else weekday
+    h=nxt.hour if hour is None else hour
+    seg_wd=wd if segment=="weekday" else None
+    history=storage.get_events(settings.db_path)
+    cells=recurrence_matrix(history,h,weekday=seg_wd)
+    stat=storage.get_stats(settings.db_path)
+    pool=[e for e in history if e["eligible"] and e["request_zone"] and int(e["event_time"][:2])==h and (seg_wd is None or datetime.strptime(e["event_date"],"%Y-%m-%d").weekday()==seg_wd)]
+    dates=sorted({e["event_date"] for e in pool})
+    published=storage.get_forecast(settings.db_path,nxt.strftime("%Y-%m-%d %H:%M:%S")) if weekday is None and hour is None else None
+    return {"now":now.isoformat(),"query":{"weekday":wd,"hour":h,"segment":segment,"defaulted":weekday is None and hour is None},
+      "header":{"slot":f"{h:02d}:00–{(h+1)%24:02d}:00","source":"DataTaxi DB — API n8n","last_event":stat.get("last_event"),
+                "history_dates":len(dates),"history_events":len(pool),
+                "coverage":"non établie : une date sans capture n'est pas un zéro","timezone":str(settings.timezone)},
+      "matrix":cells,"zones":sorted({c["zone"] for c in cells},key=int),
+      "official_forecast":published["result"] if published else None,
+      "volume_estimate":None,"volume_reason":"Aucune preuve de couverture : aucun volume estimé",
+      "note":"Récurrence historique (jour de semaine + heure choisis) ≠ prévision officielle figée à :50."}
 
 @app.get("/api/forecasts/latest")
 def latest_forecast():
