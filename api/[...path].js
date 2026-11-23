@@ -1,7 +1,7 @@
 // Proxy Vercel en lecture seule vers le backend ZonePredict (VPS).
 // La clé partagée reste côté serveur (variable d'environnement) : jamais dans le navigateur.
 const ALLOWED = new Set(['dashboard', 'forecasts/latest', 'evaluations/latest', 'health']);
-const PERIODS = new Set(['7d', '30d', 'all']);
+const PERIODS = new Set(['today', 'yesterday', 'week', 'month', '7d', '30d', 'all', 'custom']);
 
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -30,9 +30,13 @@ module.exports = async (req, res) => {
     const period = parsed.searchParams.get('period') || '7d';
     if (!PERIODS.has(period)) {
       res.statusCode = 400;
-      return res.end(JSON.stringify({ error: 'bad_period', message: 'period doit valoir 7d, 30d ou all' }));
+      return res.end(JSON.stringify({ error: 'bad_period', message: 'period invalide' }));
     }
     url += `?period=${period}`;
+    for (const k of ['start', 'end']) {
+      const v = parsed.searchParams.get(k);
+      if (v && /^\d{4}-\d{2}-\d{2}$/.test(v)) url += `&${k}=${v}`;
+    }
   }
   try {
     const r = await fetch(url, {

@@ -127,7 +127,9 @@
   async function load(){
     $('refresh').disabled=true;
     try{
-      const r=await fetch('/api/dashboard?period='+encodeURIComponent($('period').value),{cache:'no-store',headers:{'Accept':'application/json'}});
+      const per=$('period').value;let qs='period='+encodeURIComponent(per);
+      if(per==='custom'){const a=$('range-start').value,b=$('range-end').value||a;if(!a){message('Choisir une date de début.','warn');return;}qs+='&start='+a+'&end='+b;}
+      const r=await fetch('/api/dashboard?'+qs,{cache:'no-store',headers:{'Accept':'application/json'}});
       if(!r.ok){
         let detail='';
         try{const e=await r.json();detail=e.message||e.error||'';}catch(_){}
@@ -138,7 +140,8 @@
     finally{$('refresh').disabled=false;}
   }
   $('refresh').addEventListener('click',load);
-  $('period').addEventListener('change',load);
+  $('period').addEventListener('change',()=>{$('custom-range').hidden=$('period').value!=='custom';if($('period').value!=='custom')load();});
+  ['range-start','range-end'].forEach(i=>$(i).addEventListener('change',load));
   document.querySelectorAll('.nav-link').forEach(link=>link.addEventListener('click',()=>{
     document.querySelectorAll('.nav-link').forEach(x=>x.classList.remove('selected'));
     link.classList.add('selected');

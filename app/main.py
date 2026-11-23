@@ -55,11 +55,26 @@ def health():
     latest=storage.get_sync(settings.db_path)
     return {"service":"zonepredict-dashboard","ready":True,"source_connected":bool(latest and latest["state"]=="success"),"last_sync":latest["completed_at"] if latest else None}
 
+def period_range(period,today,start=None,end=None):
+    """Retourne (since,until) en dates ISO locales ; None = sans borne."""
+    d=lambda x:x.isoformat()
+    if period=="today":return d(today),d(today)
+    if period=="yesterday":y=today-timedelta(days=1);return d(y),d(y)
+    if period=="week":return d(today-timedelta(days=today.weekday())),d(today)
+    if period=="month":return d(today.replace(day=1)),d(today)
+    if period=="7d":return d(today-timedelta(days=6)),d(today)
+    if period=="30d":return d(today-timedelta(days=29)),d(today)
+    if period=="all":return None,None
+    if not start or not end:raise ValueError("start et end (AAAA-MM-JJ) requis pour une période personnalisée")
+    if start>end:raise ValueError("start doit précéder end")
+    return start,end
+
 @app.get("/api/dashboard")
-def dashboard(period:str=Query("7d",pattern="^(7d|30d|all)$")):
+def dashboard(period:str=Query("7d",pattern="^(today|yesterday|week|month|7d|30d|all|custom)$"),start:str|None=Query(None,pattern=r"^\d{4}-\d{2}-\d{2}$"),end:str|None=Query(None,pattern=r"^\d{4}-\d{2}-\d{2}$")):
     now=datetime.now(settings.timezone)
-    since=(now.date()-timedelta(days=6 if period=="7d" else 29)).isoformat() if period!="all" else None
-    ev=storage.get_events(settings.db_path,since=since)
+    try:since,until=period_range(period,now.date(),start,end)
+    except ValueError as exc:return JSONResponse({"error":"bad_period","message":str(exc)},status_code=400)
+    ev=storage.get_events(settings.db_path,since=since,until=until)
     all_evs=storage.get_events(settings.db_path)
     bytype=Counter(e["category"] for e in ev)
     bystatus=Counter(e["status"] for e in ev)
@@ -76,7 +91,7 @@ def dashboard(period:str=Query("7d",pattern="^(7d|30d|all)$")):
     total=len(ev)
     stat=storage.get_stats(settings.db_path)
     return {
-      "now":now.isoformat(),"period":period,
+      "now":now.isoformat(),"period":period,"range":{"start":since,"end":until},
       "source":{"name":"DataTaxi DB — API n8n","configured":bool(settings.api_token) and settings.api_token!="REMPLACER_PAR_UN_NOUVEAU_JETON","last_sync":sync,
                 "last_event":stat.get("last_event"),"records_cached":stat.get("n"),"days_cached":stat.get("dates"),"quarantined":stat.get("quarantined")},
       "kpi":{"total_events":total,"eligible_events":sum(e["eligible"] for e in ev),"excluded_events":sum(not e["eligible"] for e in ev),

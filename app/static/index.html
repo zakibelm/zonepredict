@@ -29,7 +29,8 @@
         <div><div class="eyebrow">CENTRE DE PILOTAGE <span class="eyebrow-dot">●</span> PRÉVISION DE DEMANDE</div><h1>ZonePredict <span class="soft">/ Dashboard</span></h1><p class="subtitle">Activité taxi, signaux horaires, quotas et fiabilité sur données observées.</p></div>
         <div class="toolbar">
           <label class="control-label" for="period">Période d’analyse</label>
-          <select id="period" aria-label="Période d’analyse"><option value="7d">7 derniers jours</option><option value="30d">30 derniers jours</option><option value="all">Tout l’historique</option></select>
+          <select id="period" aria-label="Période d’analyse"><option value="today">Aujourd’hui</option><option value="yesterday">Hier</option><option value="week">Cette semaine</option><option value="month">Ce mois</option><option value="7d" selected>7 derniers jours</option><option value="30d">30 derniers jours</option><option value="all">Tout l’historique</option><option value="custom">Jour / plage personnalisée…</option></select>
+          <span id="custom-range" hidden><input id="range-start" type="date" aria-label="Date de début"> → <input id="range-end" type="date" aria-label="Date de fin"></span>
           <button id="refresh" class="refresh" type="button">↻ Actualiser</button>
         </div>
       </header>
