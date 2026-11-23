@@ -49,6 +49,10 @@ STATIC=Path(__file__).parent/"static"
 app.mount("/static",StaticFiles(directory=STATIC),name="static")
 
 @app.get("/",include_in_schema=False)
+@app.get("/placement",include_in_schema=False)
+@app.get("/comparaison",include_in_schema=False)
+@app.get("/statistiques",include_in_schema=False)
+@app.get("/sante",include_in_schema=False)
 def root():return FileResponse(STATIC/"index.html",headers={"Cache-Control":"no-store"})
 
 @app.get("/api/health")

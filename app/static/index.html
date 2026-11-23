@@ -5,86 +5,84 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="robots" content="noindex,nofollow">
-  <title>ZonePredict — Centre de pilotage</title>
+  <title>ZonePredict</title>
   <link rel="stylesheet" href="/static/style.css">
   <script defer src="/static/app.js"></script>
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <a class="brand" href="#dashboard" aria-label="ZonePredict Accueil"><span class="pin">◉</span><span>Zone<span class="accent">Predict</span></span></a>
-      <div class="side-label">ESPACE OPÉRATIONNEL</div>
-      <nav aria-label="Navigation principale">
-        <a class="nav-link selected" href="#placement"><span>◎</span> Placement</a>
-        <a class="nav-link" href="#stats"><span>▦</span> Statistiques</a>
-        <a class="nav-link" href="#comparaison"><span>≋</span> Prévu et vécu</a>
-        <a class="nav-link" href="#systeme"><span>◈</span> Santé des données</a>
-      </nav>
-      <div class="sidebar-footer"><div class="mini-led"></div><div><b>DataTaxi DB</b><small>Lecture seule · VPS</small></div></div>
-    </aside>
-    <main class="main" id="dashboard">
-      <header class="topbar">
-        <div><div class="eyebrow">ZONEPREDICT</div><h1>Où me positionner ?</h1><p class="subtitle">Les endroits et les moments où les appels reviennent, avec les preuves.</p></div>
-        <div id="connection" class="connection is-warn" role="status" aria-live="polite">Vérification de la connexion…</div>
-      </header>
+<div class="app" id="app">
+  <aside class="side" aria-label="Navigation principale">
+    <div class="side-top"><a class="brand" href="/placement" data-route aria-label="ZonePredict"><span class="pin">◉</span><span class="lbl">Zone<b>Predict</b></span></a>
+      <button id="side-toggle" class="icon-btn" type="button" aria-label="Réduire le menu" aria-expanded="true">⟨</button></div>
+    <nav>
+      <a class="nav" href="/placement" data-route="placement"><span class="ic">◎</span><span class="lbl">Placement</span></a>
+      <a class="nav" href="/comparaison" data-route="comparaison"><span class="ic">≋</span><span class="lbl">Prévu / vécu</span></a>
+      <a class="nav" href="/statistiques" data-route="statistiques"><span class="ic">▦</span><span class="lbl">Statistiques</span></a>
+      <a class="nav" href="/sante" data-route="sante"><span class="ic">◈</span><span class="lbl">Santé</span></a>
+    </nav>
+    <div class="side-foot"><i class="led"></i><span class="lbl"><b>DataTaxi DB</b><small>Lecture seule</small></span></div>
+  </aside>
 
-      <section class="panel placement-panel" id="placement" aria-labelledby="pl-h">
-        <div class="panel-head"><div><div class="micro">PLACEMENT</div><h2 id="pl-h">Prochaine heure</h2></div>
-          <div class="modes" role="tablist" aria-label="Mode de consultation">
-            <button id="mode-a" role="tab" aria-selected="true" class="mode on" type="button">Prévision officielle</button>
-            <button id="mode-b" role="tab" aria-selected="false" class="mode" type="button">Explorer les récurrences</button>
-          </div></div>
-        <p id="pl-kind" class="kind"></p>
-        <div id="pl-controls" class="pl-controls" role="group" aria-label="Choisir le jour et l’heure" hidden>
-          <div id="pl-days" class="pl-days"></div>
-          <label class="control-label" for="pl-hour">Heure</label><select id="pl-hour"></select>
-          <button id="pl-prev" class="refresh" type="button" aria-label="Heure précédente">◀</button><button id="pl-next" class="refresh" type="button" aria-label="Heure suivante">▶</button>
-          <select id="pl-seg" aria-label="Jours historiques utilisés"><option value="weekday">Même jour de la semaine</option><option value="all">Tous les jours</option></select>
-          <button id="pl-now" class="refresh" type="button">Maintenant</button>
+  <div class="content">
+    <header class="top">
+      <h1 id="page-title">Placement</h1>
+      <div class="top-r"><span id="connection" class="chip is-warn" role="status" aria-live="polite">Connexion…</span><button id="refresh" class="btn" type="button" aria-label="Actualiser">↻</button></div>
+    </header>
+
+    <main class="pages">
+      <!-- ============ PLACEMENT ============ -->
+      <section class="page" id="page-placement" aria-label="Placement">
+        <div class="bar">
+          <div class="seg-btns" role="tablist" aria-label="Mode"><button id="mode-a" role="tab" class="tab on" aria-selected="true" type="button">Prévision officielle</button><button id="mode-b" role="tab" class="tab" aria-selected="false" type="button">Explorer</button></div>
+          <div id="pl-nav" class="nav-hour">
+            <div id="pl-days" class="days"></div>
+            <button id="pl-prev" class="btn" type="button" aria-label="Heure précédente">◀</button>
+            <select id="pl-hour" aria-label="Heure"></select>
+            <button id="pl-next" class="btn" type="button" aria-label="Heure suivante">▶</button>
+            <button id="pl-now" class="btn" type="button">Maintenant</button>
+          </div>
+          <select id="pl-seg" aria-label="Jours historiques utilisés" hidden><option value="weekday">Même jour de semaine</option><option value="all">Tous les jours</option></select>
+          <select id="pl-filter" aria-label="Signaux affichés"><option value="mf">Moyen + Fort</option><option value="f">Fort seulement</option><option value="all">Tous (avec Faible)</option></select>
+          <span class="info-wrap"><button id="pl-info" class="icon-btn" type="button" aria-label="À propos de cette vue" aria-expanded="false">ⓘ</button><div id="pl-info-pop" class="pop" hidden></div></span>
         </div>
-        <div id="pl-header" class="pl-header"></div>
-        <div id="pl-reco" class="reco"></div>
-        <div class="matrix-overflow" id="pl-matrix" tabindex="0" aria-label="Matrice des zones et des tranches de dix minutes"><div class="empty">Chargement…</div></div>
-        <div class="pl-legend"><span><i class="lg lg-1"></i> peu d’appels</span><span><i class="lg lg-2"></i> quelques-uns</span><span><i class="lg lg-3"></i> beaucoup</span><span><i class="lg lg-red"></i> Signal fort</span><span>Case vide : aucune donnée, pas « zéro appel »</span></div>
-        <div id="pl-cell" class="cell-detail" aria-live="polite"></div>
-        <div id="pl-table" class="table-wrap"></div>
+        <div id="pl-title-line" class="slot-line"></div>
+        <div class="pl-main">
+          <section class="card matrix-card" aria-label="Matrice zones et tranches">
+            <div id="pl-matrix" class="matrix-area"></div>
+            <div class="matrix-foot"><div id="pl-pager" class="pager"></div><div class="legend"><span><i class="lg lg-1"></i>peu</span><span><i class="lg lg-2"></i>quelques-uns</span><span><i class="lg lg-3"></i>beaucoup</span><span><i class="lg lg-red"></i>Fort</span></div></div>
+          </section>
+          <aside id="pl-side" class="card side-panel" aria-live="polite" aria-label="Détail du signal"></aside>
+        </div>
       </section>
 
-      <section class="panel" id="comparaison" aria-labelledby="bm-h">
-        <div class="panel-head"><div><div class="micro">VÉRIFICATION</div><h2 id="bm-h">Prévu et vécu — dernière heure terminée</h2></div><span id="bm-tag" class="pill muted">En attente</span></div>
-        <div id="bm-cards" class="bm-cards"></div>
-        <div id="bm-table" class="table-wrap"></div>
-        <div class="panel-head sub"><h3>Évolution dans le temps</h3><select id="bm-range" aria-label="Période des graphiques"><option value="24h">24 dernières heures</option><option value="7d" selected>7 derniers jours</option><option value="all">Tout</option></select></div>
-        <div class="charts2"><div><h4>Niveaux de confiance des signaux</h4><div id="bm-conf" class="chart"></div></div><div><h4>Précision mesurée</h4><div id="bm-acc" class="chart"></div></div></div>
-        <p class="tiny">Fort, Moyen et Faible classent la récurrence. Ce ne sont pas des probabilités. Une heure sans évaluation reste vide.</p>
+      <!-- ============ COMPARAISON ============ -->
+      <section class="page" id="page-comparaison" aria-label="Prévu et vécu">
+        <div class="bar"><span id="bm-tag" class="chip">En attente</span><span id="bm-slot" class="slot-line"></span>
+          <div class="seg-btns" role="tablist" aria-label="Vue"><button class="tab on" data-bm="zones" role="tab" type="button">Zone × tranche</button><button class="tab" data-bm="conf" role="tab" type="button">Confiance</button><button class="tab" data-bm="acc" role="tab" type="button">Précision</button></div>
+          <select id="bm-range" aria-label="Période"><option value="24h">24 h</option><option value="7d" selected>7 jours</option><option value="all">Tout</option></select></div>
+        <div id="bm-cards" class="bm-3"></div>
+        <section class="card fill" id="bm-pane"><div id="bm-zones" class="pane on"></div><div id="bm-conf" class="pane chart"></div><div id="bm-acc" class="pane chart"></div></section>
       </section>
 
-      <section class="panel stats-head" id="stats">
-        <div class="panel-head"><div><div class="micro">STATISTIQUES</div><h2>Données observées</h2></div>
-          <div class="toolbar"><label class="control-label" for="period">Période</label>
-            <select id="period" aria-label="Période des statistiques"><option value="today">Aujourd’hui</option><option value="yesterday">Hier</option><option value="week">Cette semaine</option><option value="month">Ce mois</option><option value="7d" selected>7 derniers jours</option><option value="30d">30 derniers jours</option><option value="all">Tout l’historique</option><option value="custom">Jour ou plage au choix…</option></select>
-            <span id="custom-range" hidden><input id="range-start" type="date" aria-label="Date de début"> → <input id="range-end" type="date" aria-label="Date de fin"></span>
-            <button id="refresh" class="refresh" type="button">↻ Actualiser</button></div></div>
-        <section class="kpis" aria-label="Chiffres clés">
-          <article class="kpi"><div class="kpi-label">Appels enregistrés</div><div id="k-total" class="kpi-val">—</div><div class="kpi-caption">Toutes catégories</div></article>
-          <article class="kpi"><div class="kpi-label">Appels pris en compte</div><div id="k-eligible" class="kpi-val">—</div><div class="kpi-caption">Utilisés pour les signaux</div></article>
-          <article class="kpi"><div class="kpi-label">Zones actives</div><div id="k-zones" class="kpi-val">—</div><div class="kpi-caption">Avec des appels</div></article>
-          <article class="kpi"><div class="kpi-label">Jours avec données</div><div id="k-days" class="kpi-val">—</div><div class="kpi-caption">Un jour manquant n’est pas zéro appel</div></article>
-        </section>
-        <section class="mid">
-          <article class="panel" id="zones"><div class="panel-head"><div><div class="micro">HISTORIQUE</div><h2>Appels par jour</h2></div></div><div id="daily-chart" class="chart"></div></article>
-          <article class="panel" id="quotas"><div class="panel-head"><div><div class="micro">RÉPARTITION</div><h2>Types d’appels</h2></div></div>
-            <div class="quota-grid"><div class="donut-wrap"><div class="donut" id="donut"><div class="donut-inner"><strong id="donut-total">—</strong><span>appels</span></div></div></div><div id="quota-list" class="quota-list"><div class="empty">Aucune donnée</div></div></div>
-            <div class="panel-foot">Les types exclus restent comptés ici, mais pas dans les signaux.</div></article>
-        </section>
-        <section class="mid">
-          <article class="panel"><div class="panel-head"><div><div class="micro">TEMPS</div><h2>Appels par jour et par heure</h2></div></div><div id="heatmap" class="heatmap-holder"></div></article>
-          <article class="panel"><div class="panel-head"><div><div class="micro">ZONES</div><h2>Zones les plus actives</h2></div></div><div id="zones-table" class="table-wrap"></div></article>
-        </section>
-        <article class="panel" id="systeme"><div class="panel-head"><div><div class="micro">SOURCE</div><h2>Santé des données</h2></div><span id="source-state" class="pill muted">Non vérifié</span></div><div id="system-status" class="system-box"></div></article>
+      <!-- ============ STATISTIQUES ============ -->
+      <section class="page" id="page-statistiques" aria-label="Statistiques">
+        <div class="bar"><div class="seg-btns" role="tablist" aria-label="Groupe"><button class="tab on" data-st="volume" role="tab" type="button">Volume</button><button class="tab" data-st="types" role="tab" type="button">Types d’appels</button><button class="tab" data-st="heure" role="tab" type="button">Jour et heure</button><button class="tab" data-st="zones" role="tab" type="button">Zones</button></div>
+          <select id="period" aria-label="Période"><option value="today">Aujourd’hui</option><option value="yesterday">Hier</option><option value="week">Cette semaine</option><option value="month">Ce mois</option><option value="7d" selected>7 jours</option><option value="30d">30 jours</option><option value="all">Tout l’historique</option><option value="custom">Jour ou plage…</option></select>
+          <span id="custom-range" hidden><input id="range-start" type="date" aria-label="Début"> → <input id="range-end" type="date" aria-label="Fin"></span></div>
+        <div class="kpis"><div class="kpi"><span>Appels enregistrés</span><b id="k-total">—</b></div><div class="kpi"><span>Pris en compte</span><b id="k-eligible">—</b></div><div class="kpi"><span>Zones actives</span><b id="k-zones">—</b></div><div class="kpi"><span>Jours avec données</span><b id="k-days">—</b></div></div>
+        <section class="card fill"><div class="pane on" data-stp="volume"><div id="daily-chart" class="chart"></div></div>
+          <div class="pane" data-stp="types"><div class="quota-grid"><div class="donut" id="donut"><div class="donut-inner"><strong id="donut-total">—</strong><span>appels</span></div></div><div id="quota-list" class="quota-list"></div></div></div>
+          <div class="pane" data-stp="heure"><div id="heatmap" class="heatmap-holder"></div></div>
+          <div class="pane" data-stp="zones"><div id="zones-table" class="table-wrap"></div></div></section>
       </section>
-      <footer class="footer">Synchronisation aux 5 minutes · Prévision figée à :50 (heure de Toronto) <span id="last-render"></span></footer>
+
+      <!-- ============ SANTÉ ============ -->
+      <section class="page" id="page-sante" aria-label="Santé des données">
+        <div class="bar"><span id="source-state" class="chip">Non vérifié</span><span id="last-render" class="slot-line"></span></div>
+        <section class="card fill"><div id="system-status" class="system-box"></div></section>
+      </section>
     </main>
   </div>
+</div>
 </body>
 </html>

@@ -9,7 +9,7 @@
   let dataset = null;
   const cell = (name, cls='') => `<td class="${cls}">${esc(name)}</td>`;
   function set(id, value){ $(id).textContent = value; }
-  function message(text, kind){ $('connection').textContent=text; $('connection').className='connection is-'+kind; }
+  function message(text, kind){ $('connection').textContent=text; $('connection').className='chip is-'+kind; }
   function timeFmt(value){
     if(!value) return '—';
     try { const date=new Date(value); if(Number.isNaN(date.getTime()))return String(value).slice(0,19); return date.toLocaleString('fr-CA',{timeZone:'America/Toronto',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
@@ -59,183 +59,251 @@
     const sync=d.source?.last_sync;
     const state=!d.source?.configured?'Non configuré':!sync?'Jamais synchronisé':sync.state==='success'?'Dernière lecture OK':'Erreur de lecture';
     $('source-state').textContent=state;
-    $('source-state').className='pill '+(sync?.state==='success'?'good':'low');
+    $('source-state').className='chip '+(sync?.state==='success'?'is-good':'is-error');
     const msg=sync?.state==='error'?`<p class="error-note">${esc(sync.message||'Erreur non précisée')}</p>`:'';
     $('system-status').innerHTML=`<div class="system-row"><span>Source de vérité</span><strong>${esc(d.source?.name||'DataTaxi DB')}</strong></div><div class="system-row"><span>Dernière synchronisation tentée</span><strong>${esc(timeFmt(sync?.completed_at||sync?.requested_at))} ${sync?.state==='success'?'· réussie':''}</strong>${msg}</div><div class="system-row"><span>Dernière course observée</span><strong>${esc(d.source?.last_event||'Non disponible')}</strong></div><div class="system-row"><span>Enregistrements en cache</span><strong>${fmt(d.source?.records_cached)} · ${fmt(d.source?.days_cached)} jours avec événements</strong></div><div class="system-row"><span>Zones inconnues (période)</span><strong>${fmt(d.kpi?.demand_zone_unknown)}</strong></div><div class="system-row"><span>Événements incomplets conservés hors calcul</span><strong>${fmt(d.source?.quarantined)}</strong></div>`;
   }
-  // ===== Placement : mode A (prévision officielle figée) / mode B (récurrences explorées) =====
+  // ===== Application multi-pages =====
+  const ROUTES={placement:'Placement',comparaison:'Prévu et vécu',statistiques:'Statistiques',sante:'Santé des données'};
   const fullDays=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
   const hh=h=>String(((h%24)+24)%24).padStart(2,'0');
-  const st={mode:'A',weekday:null,hour:null,seg:'weekday',sel:null,board:null};
-  function gradient(n,max){const t=max<=1?0:Math.min(1,(n-1)/(max-1));const S=[[243,211,74],[79,207,116],[59,134,217]];const [a,b,f]=t<.5?[S[0],S[1],t*2]:[S[1],S[2],(t-.5)*2];return 'rgb('+a.map((v,i)=>Math.round(v+(b[i]-v)*f)).join(',')+')';}
+  const KEY='zonepredict.ui';
+  const saved=(()=>{try{return JSON.parse(sessionStorage.getItem(KEY))||{};}catch{return{};}})();
+  const st=Object.assign({mode:'A',snap:0,weekday:null,hour:null,seg:'weekday',filter:'mf',sel:null,page:0,zone:0,bmTab:'zones',bmRange:'7d',stTab:'volume',period:'7d',collapsed:false},saved,{board:null});
+  const persist=()=>{try{const {board,...r}=st;sessionStorage.setItem(KEY,JSON.stringify(r));}catch{}};
+  const mq=window.matchMedia('(max-width:899px)');const isMobile=()=>mq.matches;
   const plural=(n,one,many)=>`${fmt(n)} ${n===1?one:many}`;
   const destName=x=>x.zone==='Inconnue'?'destination inconnue':'zone '+esc(x.zone);
   const destText=c=>(c.destinations||[]).map(x=>`${destName(x)} (${pct(x.share)})`).join(', ')||'destination inconnue';
   const binLabel=(h,b)=>`${hh(h)}:${String(b*10).padStart(2,'0')}–${hh(h+(b===5?1:0))}:${String(((b+1)%6)*10).padStart(2,'0')}`;
-  const confClass=c=>c==='Fort'?'Fort':c==='Moyen'?'Moyen':'Faible';
-  function setMode(m){
-    st.mode=m;st.sel=null;
-    $('mode-a').classList.toggle('on',m==='A');$('mode-b').classList.toggle('on',m==='B');
-    $('mode-a').setAttribute('aria-selected',m==='A');$('mode-b').setAttribute('aria-selected',m==='B');
-    $('pl-controls').hidden=m!=='B';
-    m==='A'?showOfficial():loadExplore();
+  function gradient(n,max){const t=max<=1?0:Math.min(1,(n-1)/(max-1));const S=[[243,211,74],[79,207,116],[59,134,217]];const [a,b,f]=t<.5?[S[0],S[1],t*2]:[S[1],S[2],(t-.5)*2];return 'rgb('+a.map((v,i)=>Math.round(v+(b[i]-v)*f)).join(',')+')';}
+  const txtOn=(n,max)=>(max>1&&(n-1)/(max-1)>=.75)?'#fff':'#06141b';
+  let route='placement';
+
+  // ---------- Routeur ----------
+  function routeFromPath(){const p=location.pathname.replace(/^\/+|\/+$/g,'');return ROUTES[p]?p:'placement';}
+  function show(r,push){
+    route=r;
+    document.querySelectorAll('.page').forEach(x=>x.classList.toggle('on',x.id==='page-'+r));
+    document.querySelectorAll('.nav').forEach(x=>{const on=x.dataset.route===r;x.classList.toggle('on',on);on?x.setAttribute('aria-current','page'):x.removeAttribute('aria-current');});
+    $('page-title').textContent=ROUTES[r];document.title='ZonePredict · '+ROUTES[r];
+    if(push&&location.pathname!=='/'+r)history.pushState({r},'','/'+r);
+    window.scrollTo(0,0);
+    requestAnimationFrame(()=>{if(r==='placement')refreshPlacement();if(r==='comparaison')benchmarkPanes();});
   }
-  function showOfficial(){
-    const d=dataset,fc=d&&(d.forecast?.upcoming||d.forecast?.current);
-    $('pl-kind').innerHTML='<b>Prévision officielle.</b> Calculée à :50 avec les appels connus à ce moment-là, puis figée. Elle ne change plus.';
-    if(!fc){
-      document.querySelector('.pl-legend').hidden=true;
-      $('pl-h').textContent='Prochaine heure';$('pl-header').innerHTML='';$('pl-reco').innerHTML='';
-      $('pl-matrix').innerHTML='<div class="empty">Pas encore de prévision officielle pour la prochaine heure. Elle est figée à :50. Pour voir les récurrences d’un jour et d’une heure, utilise « Explorer les récurrences ».</div>';
-      $('pl-cell').innerHTML='';$('pl-table').innerHTML='';return;}
-    const r=fc.result,h=Number(r.target_start.slice(11,13)),wd=(new Date(r.target_start.slice(0,10)+'T12:00:00').getDay()+6)%7;
-    st.board={hour:h,cells:r.matrix||[],official:true,
-      title:`${fullDays[wd]} · ${hh(h)} h – ${hh(h+1)} h`,
-      header:[['Figée à',timeFmt(r.issued_at)],['Jours historiques utilisés',fmt(r.historical_days_with_calls)],['Périmètre',r.segment],['Dernier appel connu',d.source?.last_event||'—'],['Couverture','non établie · volume non estimable']],
-      reco:(r.placement||[]).slice(0,5).map(z=>z.zone)};
+  document.querySelectorAll('[data-route]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();const r=a.dataset.route||'placement';show(r,true);}));
+  window.addEventListener('popstate',()=>show(routeFromPath(),false));
+
+  // ---------- Placement ----------
+  function infoText(){return st.mode==='A'
+    ?'<b>Prévision officielle.</b> Calculée à :50 avec les appels connus à ce moment-là, puis figée. Fort : au moins 2 dates et une destination stable. Moyen : au moins 2 dates, destination incomplète. Ce n’est pas une probabilité. Une case vide ne veut pas dire zéro appel.'
+    :'<b>Explorer.</b> Récurrences des jours passés pour le jour et l’heure choisis. Ce n’est pas la prévision officielle. Fort : au moins 2 dates et une destination stable. Une case vide ne veut pas dire zéro appel.';}
+  function setMode(m){st.mode=m;st.sel=null;st.page=0;st.zone=0;persist();syncBar();m==='A'?loadOfficial():loadExplore();}
+  function syncBar(){
+    $('mode-a').classList.toggle('on',st.mode==='A');$('mode-b').classList.toggle('on',st.mode==='B');
+    $('mode-a').setAttribute('aria-selected',st.mode==='A');$('mode-b').setAttribute('aria-selected',st.mode==='B');
+    $('pl-days').style.display=st.mode==='B'?'flex':'none';$('pl-hour').style.display=st.mode==='B'?'':'none';$('pl-seg').hidden=st.mode!=='B';
+    $('pl-days').innerHTML=fullDays.map((n,i)=>`<button type="button" data-d="${i}" class="${i===st.weekday?'on':''}" aria-pressed="${i===st.weekday}">${n.slice(0,3)}</button>`).join('');
+    $('pl-days').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{st.weekday=Number(b.dataset.d);st.sel=null;st.page=0;loadExplore();}));
+    if(!$('pl-hour').options.length)$('pl-hour').innerHTML=Array.from({length:24},(_,i)=>`<option value="${i}">${hh(i)} h – ${hh(i+1)} h</option>`).join('');
+    if(st.hour!=null)$('pl-hour').value=st.hour;$('pl-seg').value=st.seg;$('pl-filter').value=st.filter;
+    $('pl-info-pop').innerHTML=infoText();
+  }
+  function loadOfficial(){
+    const d=dataset,list=d?.forecast?.history||[];
+    if(!list.length){st.board={empty:'Pas encore de prévision officielle. Elle est figée à :50.',official:true,cells:[],hour:0};renderBoard();return;}
+    st.snap=Math.max(0,Math.min(st.snap,list.length-1));
+    const f=list[st.snap],r=f.result,h=Number(r.target_start.slice(11,13)),wd=(new Date(r.target_start.slice(0,10)+'T12:00:00').getDay()+6)%7;
+    st.board={official:true,hour:h,cells:r.matrix||[],title:`${fullDays[wd]} · ${hh(h)} h – ${hh(h+1)} h`,
+      meta:`Figée à ${timeFmt(r.issued_at)} · ${fmt(r.historical_days_with_calls)} dates · ${r.segment?.startsWith('global')?'tous les jours':esc(r.segment||'')}`,reco:(r.placement||[]).map(z=>z.zone)};
     renderBoard();
   }
   async function loadExplore(){
     const qs=new URLSearchParams({segment:st.seg});if(st.weekday!=null)qs.set('weekday',st.weekday);if(st.hour!=null)qs.set('hour',st.hour);
-    $('pl-kind').innerHTML='<b>Récurrences historiques.</b> Ce que les jours passés montrent pour le jour et l’heure choisis. Ce n’est pas la prévision officielle.';
     try{
       const r=await fetch('/api/placement?'+qs,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
-      const d=await r.json();st.weekday=d.query.weekday;st.hour=d.query.hour;syncControls();
+      const d=await r.json();st.weekday=d.query.weekday;st.hour=d.query.hour;persist();syncBar();
       const cells=d.matrix||[];
-      st.board={hour:d.query.hour,cells,official:false,title:`${fullDays[d.query.weekday]} · ${hh(d.query.hour)} h – ${hh(d.query.hour+1)} h`,
-        header:[['Jours historiques',d.query.segment==='weekday'?'Seulement des '+fullDays[d.query.weekday].toLowerCase()+'s':'Tous les jours'],['Dates utilisées',fmt(d.header.history_dates)],['Appels utilisés',fmt(d.header.history_events)],['Dernier appel connu',d.header.last_event||'—'],['Couverture','non établie · volume non estimable']],
-        reco:[...new Set(cells.filter(c=>c.confidence==='Fort').map(c=>c.zone))].sort((a,b)=>a-b)};
-      st.sel=null;renderBoard();
-    }catch(e){$('pl-matrix').innerHTML='<div class="empty error-note">Impossible de charger les récurrences ('+esc(e.message)+'). Réessaie avec « Actualiser ».</div>';}
+      st.board={official:false,hour:d.query.hour,cells,title:`${fullDays[d.query.weekday]} · ${hh(d.query.hour)} h – ${hh(d.query.hour+1)} h`,
+        meta:`${fmt(d.header.history_dates)} dates · ${fmt(d.header.history_events)} appels · ${d.query.segment==='weekday'?'même jour de semaine':'tous les jours'}`,reco:[...new Set(cells.filter(c=>c.confidence==='Fort').map(c=>c.zone))]};
+      renderBoard();
+    }catch(e){st.board={empty:'Impossible de charger les récurrences ('+e.message+').',cells:[],hour:0};renderBoard();}
   }
+  function visible(cells){return cells.filter(c=>st.filter==='all'||(st.filter==='f'?c.confidence==='Fort':c.confidence!=='Faible'));}
+  function best(cells){const rank={Fort:2,Moyen:1,Faible:0};return cells.slice().sort((a,b)=>rank[b.confidence]-rank[a.confidence]||b.occurrences-a.occurrences)[0];}
+  const keyOf=c=>c.zone+':'+c.bin;
+  function refreshPlacement(){if(!st.board){st.mode==='A'?loadOfficial():loadExplore();}else renderBoard();}
+  function perPage(){const h=$('pl-matrix').clientHeight;return h>60?Math.max(1,Math.floor((h-34)/56)):6;}
   function renderBoard(){
-    const B=st.board,cells=B.cells,h=B.hour;
-    document.querySelector('.pl-legend').hidden=!cells.length;
-    $('pl-h').textContent=B.title;
-    $('pl-header').innerHTML=B.header.map(([k,v])=>`<span>${esc(k)} : <b>${esc(v)}</b></span>`).join('');
-    $('pl-reco').innerHTML=B.reco.length
-      ?`<div class="reco-on"><span class="reco-lbl">${B.official?'Recommandation':'Signaux forts dans l’historique'}</span> ${B.reco.map(z=>'<b>zone '+esc(z)+'</b>').join(' · ')}<small>${B.official?'Au moins deux dates et une destination stable.':'Repère historique seulement, pas une recommandation officielle.'}</small></div>`
-      :'<div class="reco-off">Aucun signal fort pour ce créneau. Les signaux moyens ou faibles sont à titre informatif.</div>';
-    if(!cells.length){$('pl-matrix').innerHTML='<div class="empty">Aucun appel admissible dans l’historique pour ce jour et cette heure. Ça ne veut pas dire « zéro appel » : seulement aucune donnée enregistrée.</div>';$('pl-cell').innerHTML='';$('pl-table').innerHTML='';return;}
-    const zones=[...new Set(cells.map(c=>c.zone))].sort((a,b)=>Number(a)-Number(b));
-    const max=Math.max(...cells.map(c=>c.occurrences)),look=new Map(cells.map(c=>[c.zone+':'+c.bin,c]));
-    let html='<table class="matrix-table pm"><thead><tr><th scope="col">Zone</th>';
+    const B=st.board;if(!B)return;
+    const nav=$('pl-prev');
+    $('pl-info-pop').innerHTML=infoText();
+    if(B.empty){$('pl-title-line').innerHTML='';$('pl-matrix').innerHTML=`<div class="empty">${esc(B.empty)}</div>`;$('pl-pager').innerHTML='';$('pl-side').innerHTML='';return;}
+    const cells=visible(B.cells),zones=[...new Set(cells.map(c=>c.zone))].sort((a,b)=>Number(a)-Number(b)),h=B.hour;
+    $('pl-title-line').innerHTML=`<b>${esc(B.title)}</b> · ${B.meta}${B.reco.length?` · <span class="reco-chip">zones fortes : <b>${B.reco.slice().sort((a,b)=>a-b).map(esc).join(' · ')}</b></span>`:''}`;
+    if(!cells.length){
+      const hidden=B.cells.length;
+      $('pl-matrix').innerHTML=`<div class="empty">${hidden?'Aucun signal '+(st.filter==='f'?'fort':'moyen ou fort')+' pour ce créneau. Les signaux faibles restent dans l’historique : choisis « Tous (avec Faible) » pour les voir.':'Aucune donnée admissible pour ce créneau. Ce n’est pas « zéro appel » : rien n’est enregistré.'}</div>`;
+      $('pl-pager').innerHTML='';$('pl-side').innerHTML='<div class="tiny">Aucun signal à afficher.</div>';return;}
+    if(!st.sel||!cells.some(c=>keyOf(c)===st.sel)){const b=best(cells);st.sel=keyOf(b);}
+    const max=Math.max(...cells.map(c=>c.occurrences));
+    if(isMobile())renderZoneView(cells,zones,h,max);else renderGrid(cells,zones,h,max);
+    renderSide(B.cells.find(c=>keyOf(c)===st.sel),B);
+  }
+  function selectKey(k){st.sel=k;persist();renderBoard();}
+  function renderGrid(cells,zones,h,max){
+    const pp=perPage(),pages=Math.max(1,Math.ceil(zones.length/pp));
+    const si=zones.findIndex(z=>z===st.sel.split(':')[0]);
+    if(st.page>=pages)st.page=pages-1;if(st.page<0)st.page=0;
+    const look=new Map(cells.map(c=>[keyOf(c),c])),slice=zones.slice(st.page*pp,st.page*pp+pp);
+    let html='<table class="mx"><thead><tr><th class="z" scope="col">Zone</th>';
     for(let b=0;b<6;b++)html+=`<th scope="col">${binLabel(h,b)}</th>`;
     html+='</tr></thead><tbody>';
-    for(const z of zones){html+=`<tr><th scope="row" class="zone-name">Zone ${esc(z)}</th>`;
+    for(const z of slice){html+=`<tr><th class="z" scope="row">Zone ${esc(z)}</th>`;
       for(let b=0;b<6;b++){const c=look.get(z+':'+b),k=z+':'+b;
-        html+=c?`<td class="pc ${c.confidence==='Fort'?'fort':''} ${st.sel===k?'sel':''}" data-k="${k}" tabindex="0" role="button" style="background:${gradient(c.occurrences,max)};color:${(max>1&&(c.occurrences-1)/(max-1)>=.75)?'#fff':'#06141b'}" aria-label="Zone ${esc(z)}, ${binLabel(h,b)}, ${plural(c.occurrences,'appel','appels')}, ${plural(c.distinct_dates,'date','dates')}, confiance ${esc(c.confidence)}"><span class="n1">${plural(c.occurrences,'appel','appels')}</span><span class="n2">${plural(c.distinct_dates,'date','dates')}</span></td>`:'<td class="cell-blank"></td>';}
+        html+=c?`<td class="pc ${c.confidence==='Fort'?'fort':''} ${st.sel===k?'sel':''}" data-k="${k}" tabindex="0" role="button" style="background:${gradient(c.occurrences,max)};color:${txtOn(c.occurrences,max)}" aria-label="Zone ${esc(z)}, ${binLabel(h,b)}, ${plural(c.occurrences,'appel','appels')}, ${plural(c.distinct_dates,'date','dates')}, ${esc(c.confidence)}"><span class="n1">${plural(c.occurrences,'appel','appels')}</span><span class="n2">${plural(c.distinct_dates,'date','dates')}</span></td>`:'<td class="blank"></td>';}
       html+='</tr>';}
     $('pl-matrix').innerHTML=html+'</tbody></table>';
-    let t='<table class="table"><thead><tr><th>Zone</th><th>Heure</th><th>Destination (part réelle)</th><th class="num">Appels</th><th class="num">Dates</th><th>Confiance</th></tr></thead><tbody>';
-    cells.forEach(c=>{const k=c.zone+':'+c.bin;t+=`<tr class="dt-row ${st.sel===k?'sel':''}" data-k="${k}" tabindex="0"><td>Zone ${esc(c.zone)}</td><td>${binLabel(h,c.bin)}</td><td>${destText(c)}</td><td class="num">${fmt(c.occurrences)}</td><td class="num">${fmt(c.distinct_dates)}</td><td class="conf-${confClass(c.confidence)}">${esc(c.confidence)}</td></tr>`;});
-    $('pl-table').innerHTML=t+'</tbody></table>';
-    const pick=k=>{st.sel=st.sel===k?null:k;renderBoard();if(st.sel)$('pl-cell').scrollIntoView({block:'nearest',behavior:'smooth'});};
-    document.querySelectorAll('#pl-matrix [data-k],#pl-table [data-k]').forEach(el=>{el.addEventListener('click',()=>pick(el.dataset.k));el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick(el.dataset.k);}});});
-    renderCellDetail();
+    $('pl-pager').innerHTML=pages>1?`<button class="btn" id="pg-prev" ${st.page===0?'disabled':''} aria-label="Zones précédentes">‹</button><span>Zones ${st.page*pp+1}–${Math.min(zones.length,st.page*pp+pp)} sur ${zones.length}</span><button class="btn" id="pg-next" ${st.page>=pages-1?'disabled':''} aria-label="Zones suivantes">›</button>`:`<span>${zones.length} zone${zones.length>1?'s':''}</span>`;
+    $('pg-prev')?.addEventListener('click',()=>{st.page--;renderBoard();});$('pg-next')?.addEventListener('click',()=>{st.page++;renderBoard();});
+    $('pl-matrix').querySelectorAll('[data-k]').forEach(el=>{el.addEventListener('click',()=>selectKey(el.dataset.k));el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectKey(el.dataset.k);}});});
   }
-  function renderCellDetail(){
-    const B=st.board,c=st.sel&&B.cells.find(x=>x.zone+':'+x.bin===st.sel);
-    if(!c){$('pl-cell').innerHTML='<p class="tiny">Touche une case ou une ligne pour voir les dates, les heures et les destinations.</p>';return;}
-    const det=c.dates_detail&&c.dates_detail.length?c.dates_detail:(c.historical_dates||[]).map(d=>({date:d,count:null,times:[]}));
-    $('pl-cell').innerHTML=`<div class="cd-head"><b>Zone ${esc(c.zone)} · ${binLabel(B.hour,c.bin)}</b><span class="conf-${confClass(c.confidence)}">${esc(c.confidence)}</span></div>
-      <p>${plural(c.occurrences,'appel','appels')} sur ${plural(c.distinct_dates,'date','dates')} · ${destText(c)}</p><p class="tiny">${esc(c.confidence_reason||'')}</p>
-      <ul class="cd-dates">${det.map(x=>`<li><b>${esc(x.date)}</b>${x.count!=null?' · '+plural(x.count,'appel','appels'):''}${x.times?.length?' · '+x.times.map(esc).join(', '):''}</li>`).join('')}</ul>
-      ${c.dates_detail?'':'<p class="tiny">Cette prévision a été figée avant l’ajout du détail des heures : seules les dates sont conservées.</p>'}`;
+  function renderZoneView(cells,zones,h,max){
+    if(st.zone>=zones.length)st.zone=0;
+    const z=zones[st.zone],look=new Map(cells.filter(c=>c.zone===z).map(c=>[c.bin,c]));
+    let html=`<div class="zv"><div class="zv-nav"><button class="btn" id="zv-prev" aria-label="Zone précédente">‹</button><b>Zone ${esc(z)}</b><button class="btn" id="zv-next" aria-label="Zone suivante">›</button></div><div class="tiny" style="text-align:center">${st.zone+1} sur ${zones.length}</div>`;
+    for(let b=0;b<6;b++){const c=look.get(b),k=z+':'+b;
+      html+=c?`<button type="button" class="zv-row ${c.confidence==='Fort'?'fort':''} ${st.sel===k?'sel':''}" data-k="${k}" style="background:${gradient(c.occurrences,max)};color:${txtOn(c.occurrences,max)}"><span>${binLabel(h,b)}</span><span style="text-align:right">${plural(c.occurrences,'appel','appels')}<small>${plural(c.distinct_dates,'date','dates')}</small></span></button>`:`<div class="zv-row blank"><span>${binLabel(h,b)}</span><span>—</span></div>`;}
+    $('pl-matrix').innerHTML=html+'</div>';$('pl-pager').innerHTML='';
+    $('zv-prev').addEventListener('click',()=>{st.zone=(st.zone+zones.length-1)%zones.length;st.sel=null;renderBoard();});
+    $('zv-next').addEventListener('click',()=>{st.zone=(st.zone+1)%zones.length;st.sel=null;renderBoard();});
+    $('pl-matrix').querySelectorAll('[data-k]').forEach(el=>el.addEventListener('click',()=>selectKey(el.dataset.k)));
   }
-  function syncControls(){
-    $('pl-days').innerHTML=fullDays.map((n,i)=>`<button type="button" data-d="${i}" class="${i===st.weekday?'on':''}" aria-pressed="${i===st.weekday}">${n.slice(0,3)}</button>`).join('');
-    $('pl-days').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{st.weekday=Number(b.dataset.d);loadExplore();}));
-    if(!$('pl-hour').options.length)$('pl-hour').innerHTML=Array.from({length:24},(_,i)=>`<option value="${i}">${hh(i)} h – ${hh(i+1)} h</option>`).join('');
-    $('pl-hour').value=st.hour;$('pl-seg').value=st.seg;
+  function renderSide(c,B){
+    if(!c){$('pl-side').innerHTML='<div class="tiny">Touche une case pour voir le détail.</div>';return;}
+    const det=c.dates_detail?.length?c.dates_detail:(c.historical_dates||[]).map(d=>({date:d,count:null,times:[]}));
+    const fort=c.confidence==='Fort';
+    const advice=fort?`<div class="advice">${B.official?'<b>Conseil :</b> se placer en zone '+esc(c.zone)+' de '+binLabel(B.hour,c.bin).replace('–',' à ')+'.':'<b>Repère historique :</b> la zone '+esc(c.zone)+' revient à cette tranche. Ce n’est pas une prévision officielle.'}</div>`:'<div class="advice no">Signal à titre informatif. Pas de conseil de déplacement.</div>';
+    $('pl-side').innerHTML=`<div class="row"><h2>Zone ${esc(c.zone)}</h2><span class="badge b-${c.confidence}">${esc(c.confidence)}</span></div>
+      <div><b>${binLabel(B.hour,c.bin)}</b> · ${plural(c.occurrences,'appel','appels')} sur ${plural(c.distinct_dates,'date','dates')}</div>${advice}
+      <h3>Pourquoi</h3><div>${esc(c.confidence_reason||'')}</div>
+      <h3>Destination</h3><div>${destText(c)}</div>
+      <h3>Dates</h3><ul class="dates">${det.map(x=>`<li><b>${esc(x.date)}</b>${x.count!=null?' · '+plural(x.count,'appel','appels'):''}${x.times?.length?' · '+x.times.map(esc).join(', '):''}</li>`).join('')}</ul>
+      ${c.dates_detail?'':'<div class="tiny">Prévision figée avant l’ajout des heures : seules les dates sont conservées.</div>'}`;
   }
-  // ===== Prévu et vécu =====
+  // barre du haut
+  $('mode-a').addEventListener('click',()=>setMode('A'));$('mode-b').addEventListener('click',()=>setMode('B'));
+  $('pl-filter').addEventListener('change',()=>{st.filter=$('pl-filter').value;st.sel=null;st.page=0;persist();renderBoard();});
+  $('pl-seg').addEventListener('change',()=>{st.seg=$('pl-seg').value;st.sel=null;persist();loadExplore();});
+  $('pl-hour').addEventListener('change',()=>{st.hour=Number($('pl-hour').value);st.sel=null;st.page=0;loadExplore();});
+  $('pl-prev').addEventListener('click',()=>{
+    if(st.mode==='A'){st.snap++;st.sel=null;st.page=0;persist();loadOfficial();return;}
+    if(st.hour==null)return;if(st.hour===0){st.hour=23;st.weekday=(st.weekday+6)%7;}else st.hour--;st.sel=null;st.page=0;loadExplore();});
+  $('pl-next').addEventListener('click',()=>{
+    if(st.mode==='A'){st.snap=Math.max(0,st.snap-1);st.sel=null;st.page=0;persist();loadOfficial();return;}
+    if(st.hour==null)return;if(st.hour===23){st.hour=0;st.weekday=(st.weekday+1)%7;}else st.hour++;st.sel=null;st.page=0;loadExplore();});
+  $('pl-now').addEventListener('click',()=>{st.snap=0;st.weekday=null;st.hour=null;st.sel=null;st.page=0;st.mode==='A'?loadOfficial():loadExplore();});
+  $('pl-info').addEventListener('click',()=>{const o=$('pl-info-pop').hidden;$('pl-info-pop').hidden=!o;$('pl-info').setAttribute('aria-expanded',o);});
+  document.addEventListener('click',e=>{if(!e.target.closest('.info-wrap')){$('pl-info-pop').hidden=true;$('pl-info').setAttribute('aria-expanded',false);}});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')$('pl-info-pop').hidden=true;});
+  if('ResizeObserver' in window)new ResizeObserver(()=>{if(route==='placement'&&st.board&&!isMobile())renderBoard();}).observe($('pl-matrix'));
+  mq.addEventListener?.('change',()=>{if(st.board)renderBoard();});
+
+  // ---------- Prévu / vécu ----------
   function benchmark(d){
-    const evs=(d.evaluations||[]),fcs=d.forecast?.history||[];
-    const ev=evs[0];
+    const evs=d.evaluations||[],fcs=d.forecast?.history||[],ev=evs[0];
     if(!ev){
-      $('bm-tag').textContent='Pas encore évaluable';$('bm-tag').className='pill muted';
-      $('bm-cards').innerHTML='<div class="empty">Aucune comparaison pour l’instant. Une prévision peut être comparée une fois son heure terminée (vers H:05). Rien n’est simulé.</div>';$('bm-table').innerHTML='';
+      $('bm-tag').textContent='Pas encore évaluable';$('bm-tag').className='chip';$('bm-slot').textContent='';
+      $('bm-cards').innerHTML='<div class="empty" style="grid-column:1/-1;min-height:70px">Aucune comparaison pour l’instant. Une prévision est comparée une fois son heure terminée (vers H:05). Rien n’est simulé.</div>';
+      $('bm-zones').innerHTML='<div class="empty">Aucune heure évaluée.</div>';
     }else{
-      const r=ev.result,f=fcs.find(x=>x.target_start===ev.target_start)?.result,cells=f?.matrix||[];
-      const fort=cells.filter(c=>c.confidence==='Fort').length;
-      $('bm-tag').textContent=r.final?'Évaluation finale':'Évaluation provisoire';$('bm-tag').className='pill warn';
-      $('bm-cards').innerHTML=`<div class="bm-h">${esc(ev.target_start.slice(0,10))} · ${esc(ev.target_start.slice(11,16))}–${esc(r.target_end.slice(11,16))}</div>
-        <div class="bm-3"><div class="bm-col"><h4>Prévu</h4><b>${fmt(cells.length)}</b><span>cases signalées (${fmt(fort)} fortes)</span><small>Volume : non estimé</small></div>
+      const r=ev.result,f=fcs.find(x=>x.target_start===ev.target_start)?.result,cells=f?.matrix||[],fort=cells.filter(c=>c.confidence==='Fort').length;
+      $('bm-tag').textContent=r.final?'Évaluation finale':'Provisoire';$('bm-tag').className='chip is-warn';
+      $('bm-slot').innerHTML=`<b>${esc(ev.target_start.slice(0,10))} · ${esc(ev.target_start.slice(11,16))}–${esc(r.target_end.slice(11,16))}</b>`;
+      $('bm-cards').innerHTML=`<div class="bm-col"><h4>Prévu</h4><b>${fmt(cells.length)}</b><span>cases signalées (${fmt(fort)} fortes)</span><small>Volume non estimé</small></div>
         <div class="bm-col"><h4>Vécu</h4><b>${fmt(r.observed_known_zone)}</b><span>appels avec zone connue</span><small>${fmt(r.observed_unknown_zone)} sans zone</small></div>
-        <div class="bm-col"><h4>Écart</h4><b>${fmt(r.matched_zone_and_bin)} / ${fmt(r.unanticipated_observed)}</b><span>annoncés / non annoncés</span><small>Écart de volume : non calculable</small></div></div>
-        <p class="tiny">${esc(r.caution||'')}</p>`;
+        <div class="bm-col"><h4>Écart</h4><b>${fmt(r.matched_zone_and_bin)} / ${fmt(r.unanticipated_observed)}</b><span>annoncés / non annoncés</span><small>Écart de volume non calculable</small></div>`;
       const real=r.real_by_zone_bin||{},keys=new Map();
       cells.forEach(c=>keys.set(c.zone+'|'+c.bin,{zone:c.zone,bin:c.bin,pred:c,real:0}));
       Object.entries(real).forEach(([k,n])=>{const [z,b]=k.split('|');const o=keys.get(k)||{zone:z,bin:Number(b),pred:null,real:0};o.real=n;keys.set(k,o);});
-      const h=Number(ev.target_start.slice(11,13));
-      const rows=[...keys.values()].sort((a,b)=>Number(a.zone)-Number(b.zone)||a.bin-b.bin);
-      $('bm-table').innerHTML=rows.length?`<table class="table"><thead><tr><th>Zone</th><th>Tranche</th><th>Prévu</th><th class="num">Vécu</th><th>Résultat</th></tr></thead><tbody>${rows.map(o=>`<tr><td>Zone ${esc(o.zone)}</td><td>${binLabel(h,o.bin)}</td><td>${o.pred?esc(o.pred.confidence)+' · '+plural(o.pred.occurrences,'appel','appels')+' dans l’historique':'—'}</td><td class="num">${fmt(o.real)}</td><td>${o.pred&&o.real?'Annoncé et observé':o.pred?'Annoncé, non observé (couverture non établie)':'Non annoncé'}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Aucun signal ni appel dans cette heure.</div>';
+      const h=Number(ev.target_start.slice(11,13)),rows=[...keys.values()].sort((a,b)=>Number(a.zone)-Number(b.zone)||a.bin-b.bin);
+      $('bm-zones').innerHTML=rows.length?`<table class="table"><thead><tr><th>Zone</th><th>Tranche</th><th>Prévu</th><th class="num">Vécu</th><th>Résultat</th></tr></thead><tbody>${rows.map(o=>`<tr><td>Zone ${esc(o.zone)}</td><td>${binLabel(h,o.bin)}</td><td>${o.pred?esc(o.pred.confidence)+' · '+plural(o.pred.occurrences,'appel','appels'):'—'}</td><td class="num">${fmt(o.real)}</td><td>${o.pred&&o.real?'Annoncé et observé':o.pred?'Annoncé, non observé':'Non annoncé'}</td></tr>`).join('')}</tbody></table><p class="tiny" style="padding:6px 8px">${esc(r.caution||'')}</p>`:'<div class="empty">Aucun signal ni appel dans cette heure.</div>';
     }
-    trendCharts(d);
+    benchmarkPanes();
+  }
+  function benchmarkPanes(){
+    document.querySelectorAll('[data-bm]').forEach(b=>b.classList.toggle('on',b.dataset.bm===st.bmTab));
+    ['zones','conf','acc'].forEach(k=>$('bm-'+k).classList.toggle('on',k===st.bmTab));
+    if(dataset&&st.bmTab!=='zones')trendCharts(dataset);
   }
   function trendCharts(d){
-    const range=$('bm-range').value,now=Date.now(),lim=range==='24h'?864e5:range==='7d'?6048e5:Infinity;
+    const lim=st.bmRange==='24h'?864e5:st.bmRange==='7d'?6048e5:Infinity,now=Date.now();
     const within=t=>now-new Date(t.replace(' ','T')).getTime()<=lim;
     const fcs=(d.forecast?.history||[]).filter(f=>within(f.target_start)).slice().reverse();
     const evs=(d.evaluations||[]).filter(e=>within(e.target_start)).slice().reverse();
-    const bars=(items,name)=>items.length?items:[];
-    // Confiance : barres empilées par prévision (nombre de cases)
-    if(!fcs.length)$('bm-conf').innerHTML='<div class="empty">Aucune prévision sur cette période.</div>';
-    else{const W=520,H=170,L=30,mx=Math.max(1,...fcs.map(f=>(f.result.matrix||[]).length)),bw=Math.max(6,Math.min(34,(W-L)/fcs.length-6));
-      const col={Fort:'#ff6b6b',Moyen:'#f4be61',Faible:'#6d8793'};
-      let g='';fcs.forEach((f,i)=>{let y=H-24;const x=L+i*((W-L)/fcs.length)+3;
-        ['Faible','Moyen','Fort'].forEach(k=>{const n=(f.result.matrix||[]).filter(c=>c.confidence===k).length,hgt=n/mx*(H-40);y-=hgt;g+=`<rect x="${x}" y="${y}" width="${bw}" height="${hgt}" fill="${col[k]}"><title>${f.target_start.slice(5,16)} · ${k} : ${n}</title></rect>`;});
-        g+=`<text x="${x+bw/2}" y="${H-8}" font-size="9" fill="#9bb4c0" text-anchor="middle">${f.target_start.slice(11,13)}h</text>`;});
-      $('bm-conf').innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Nombre de signaux Fort, Moyen et Faible par prévision">${g}</svg><div class="pl-legend"><span><i class="lg" style="background:#ff6b6b"></i> Fort</span><span><i class="lg" style="background:#f4be61"></i> Moyen</span><span><i class="lg" style="background:#6d8793"></i> Faible</span></div>`;}
-    // Précision : part des appels annoncés ; périodes non évaluables = vides
-    const pts=evs.filter(e=>e.result.observed_match_share!=null);
-    if(!pts.length)$('bm-acc').innerHTML='<div class="empty">Aucune heure évaluable sur cette période. Les heures sans évaluation restent vides, jamais à zéro.</div>';
-    else{const W=520,H=170,L=34;const X=i=>pts.length===1?W/2:L+i/(pts.length-1)*(W-L-12),Y=v=>H-26-(v/100)*(H-44);
-      $('bm-acc').innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Part des appels annoncés par heure évaluée"><line x1="${L}" y1="${Y(0)}" x2="${W-8}" y2="${Y(0)}" stroke="#35515d"/><line x1="${L}" y1="${Y(100)}" x2="${W-8}" y2="${Y(100)}" stroke="#35515d" stroke-dasharray="3"/><text x="4" y="${Y(100)+3}" font-size="9" fill="#9bb4c0">100 %</text><text x="4" y="${Y(0)+3}" font-size="9" fill="#9bb4c0">0 %</text><polyline fill="none" stroke="#29e2df" stroke-width="2" points="${pts.map((e,i)=>X(i)+','+Y(e.result.observed_match_share)).join(' ')}"/>${pts.map((e,i)=>`<circle cx="${X(i)}" cy="${Y(e.result.observed_match_share)}" r="4" fill="#29e2df"><title>${e.target_start.slice(5,16)} · ${pct(e.result.observed_match_share)} annoncés · ${e.result.unanticipated_observed} non annoncés</title></circle>`).join('')}</svg><p class="tiny">${pts.length} heure(s) évaluée(s). Évaluations provisoires : la couverture n’est pas établie.</p>`;}
+    const box=$('bm-'+st.bmTab);if(!box||st.bmTab==='zones')return;
+    const W=Math.max(320,box.clientWidth||600),H=Math.max(200,(box.clientHeight||300)-40);
+    if(st.bmTab==='conf'){
+      if(!fcs.length){box.innerHTML='<div class="empty">Aucune prévision sur cette période.</div>';return;}
+      const L=34,mx=Math.max(1,...fcs.map(f=>(f.result.matrix||[]).length)),step=(W-L-8)/fcs.length,bw=Math.max(6,Math.min(46,step-6)),col={Fort:'#ff6b6b',Moyen:'#f4be61',Faible:'#6d8793'};
+      let g=`<text x="2" y="14" font-size="11" fill="#9bb4c0">${mx}</text>`;
+      fcs.forEach((f,i)=>{let y=H-22;const x=L+i*step+3;['Faible','Moyen','Fort'].forEach(k=>{const n=(f.result.matrix||[]).filter(c=>c.confidence===k).length,hg=n/mx*(H-44);y-=hg;g+=`<rect x="${x}" y="${y}" width="${bw}" height="${hg}" fill="${col[k]}"><title>${f.target_start.slice(5,16)} · ${k} : ${n}</title></rect>`;});g+=`<text x="${x+bw/2}" y="${H-6}" font-size="11" fill="#9bb4c0" text-anchor="middle">${f.target_start.slice(11,13)}h</text>`;});
+      box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Nombre de signaux Fort, Moyen et Faible par prévision">${g}</svg><div class="legend2"><span><i class="lg" style="background:#ff6b6b"></i>Fort</span><span><i class="lg" style="background:#f4be61"></i>Moyen</span><span><i class="lg" style="background:#6d8793"></i>Faible</span><span>Classement de récurrence, pas une probabilité</span></div>`;
+    }else{
+      const pts=evs.filter(e=>e.result.observed_match_share!=null);
+      if(!pts.length){box.innerHTML='<div class="empty">Aucune heure évaluable sur cette période. Les heures sans évaluation restent vides, jamais à zéro.</div>';return;}
+      const L=40,X=i=>pts.length===1?W/2:L+i/(pts.length-1)*(W-L-16),Y=v=>H-24-(v/100)*(H-44);
+      box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Part des appels annoncés par heure évaluée"><line x1="${L}" y1="${Y(0)}" x2="${W-8}" y2="${Y(0)}" stroke="#35515d"/><line x1="${L}" y1="${Y(100)}" x2="${W-8}" y2="${Y(100)}" stroke="#35515d" stroke-dasharray="3"/><text x="2" y="${Y(100)+4}" font-size="11" fill="#9bb4c0">100 %</text><text x="2" y="${Y(0)+4}" font-size="11" fill="#9bb4c0">0 %</text><polyline fill="none" stroke="#29e2df" stroke-width="2.5" points="${pts.map((e,i)=>X(i)+','+Y(e.result.observed_match_share)).join(' ')}"/>${pts.map((e,i)=>`<circle cx="${X(i)}" cy="${Y(e.result.observed_match_share)}" r="5" fill="#29e2df"><title>${e.target_start.slice(5,16)} · ${pct(e.result.observed_match_share)} annoncés · ${e.result.unanticipated_observed} non annoncés</title></circle>`).join('')}</svg><div class="legend2"><span>${pts.length} heure(s) évaluée(s)</span><span>Provisoire : couverture non établie</span></div>`;
+    }
   }
+  document.querySelectorAll('[data-bm]').forEach(b=>b.addEventListener('click',()=>{st.bmTab=b.dataset.bm;persist();benchmarkPanes();}));
+  $('bm-range').addEventListener('change',()=>{st.bmRange=$('bm-range').value;persist();benchmarkPanes();});
+  window.addEventListener('resize',()=>{if(route==='comparaison')benchmarkPanes();});
+
+  // ---------- Statistiques ----------
+  function statsPanes(){
+    document.querySelectorAll('[data-st]').forEach(b=>b.classList.toggle('on',b.dataset.st===st.stTab));
+    document.querySelectorAll('[data-stp]').forEach(p=>p.classList.toggle('on',p.dataset.stp===st.stTab));
+  }
+  document.querySelectorAll('[data-st]').forEach(b=>b.addEventListener('click',()=>{st.stTab=b.dataset.st;persist();statsPanes();}));
+
+  // ---------- Données ----------
   function render(d){
     dataset=d;
     set('k-total',fmt(d.kpi.total_events));set('k-eligible',fmt(d.kpi.eligible_events));set('k-zones',fmt(d.kpi.active_zones));set('k-days',fmt(d.kpi.days_observed));
     const sync=d.source?.last_sync;
-    if(sync?.state==='success')message(`Données à jour · dernier appel ${d.source.last_event||'inconnu'} · synchronisé ${timeFmt(sync.completed_at)}`,'good');
-    else if(sync?.state==='error')message('Lecture des données en erreur · '+(sync.message||'cause inconnue')+' · on affiche seulement l’historique déjà reçu','error');
-    else message('Connexion aux données non confirmée','warn');
+    if(sync?.state==='success')message(`À jour · dernier appel ${d.source.last_event||'inconnu'}`,'good');
+    else if(sync?.state==='error')message('Lecture en erreur · '+(sync.message||'cause inconnue'),'error');
+    else message('Connexion non confirmée','warn');
     quotas(d.quotas,d.kpi.total_events);lineChart(d.by_date);heatmap(d.heatmap);tableZones(d.zones);system(d);benchmark(d);
-    set('last-render','· Affiché à '+timeFmt(d.now));
-    if(st.mode==='A')showOfficial();
+    set('last-render','Affiché à '+timeFmt(d.now));
+    if(st.mode==='A'){loadOfficial();}
   }
   async function load(){
     $('refresh').disabled=true;
     try{
       const per=$('period').value;let qs='period='+encodeURIComponent(per);
-      if(per==='custom'){const a=$('range-start').value,b=$('range-end').value||a;if(!a){message('Choisir une date de début.','warn');return;}qs+='&start='+a+'&end='+b;}
+      if(per==='custom'){const a=$('range-start').value,b=$('range-end').value||a;if(a)qs+='&start='+a+'&end='+b;else qs='period=7d';}
       const r=await fetch('/api/dashboard?'+qs,{cache:'no-store',headers:{'Accept':'application/json'}});
-      if(!r.ok){
-        let detail='';
-        try{const e=await r.json();detail=e.message||e.error||'';}catch(_){}
-        throw new Error('HTTP '+r.status+(detail?' — '+detail:''));
-      }
-      const data=await r.json();render(data);
-    } catch(err){message('Impossible de récupérer l’état du dashboard : '+String(err.message||err),'error');}
+      if(!r.ok){let detail='';try{const e=await r.json();detail=e.message||e.error||'';}catch(_){}throw new Error('HTTP '+r.status+(detail?' — '+detail:''));}
+      render(await r.json());
+    }catch(err){message('Données indisponibles : '+String(err.message||err),'error');}
     finally{$('refresh').disabled=false;}
   }
   $('refresh').addEventListener('click',()=>{load();if(st.mode==='B')loadExplore();});
-  $('period').addEventListener('change',()=>{$('custom-range').hidden=$('period').value!=='custom';if($('period').value!=='custom')load();});
+  $('period').addEventListener('change',()=>{st.period=$('period').value;persist();$('custom-range').hidden=$('period').value!=='custom';if($('period').value!=='custom')load();});
   ['range-start','range-end'].forEach(i=>$(i).addEventListener('change',load));
-  document.querySelectorAll('.nav-link').forEach(link=>link.addEventListener('click',()=>{
-    document.querySelectorAll('.nav-link').forEach(x=>x.classList.remove('selected'));
-    link.classList.add('selected');
-  }));
-  $('mode-a').addEventListener('click',()=>setMode('A'));$('mode-b').addEventListener('click',()=>setMode('B'));
-  $('pl-hour').addEventListener('change',()=>{st.hour=Number($('pl-hour').value);loadExplore();});
-  $('pl-seg').addEventListener('change',()=>{st.seg=$('pl-seg').value;loadExplore();});
-  $('pl-prev').addEventListener('click',()=>{if(st.hour==null)return;if(st.hour===0){st.hour=23;st.weekday=(st.weekday+6)%7;}else st.hour--;loadExplore();});
-  $('pl-next').addEventListener('click',()=>{if(st.hour==null)return;if(st.hour===23){st.hour=0;st.weekday=(st.weekday+1)%7;}else st.hour++;loadExplore();});
-  $('pl-now').addEventListener('click',()=>{st.weekday=null;st.hour=null;loadExplore();});
-  $('bm-range').addEventListener('change',()=>{if(dataset)trendCharts(dataset);});
-  load();
-  {const m=location.hash.match(/^#explorer(?:\/([0-6])\/(\d{1,2}))?$/);if(m){if(m[1]!=null){st.weekday=Number(m[1]);st.hour=Math.min(23,Number(m[2]));}setMode('B');}}
-  // Vue ouverte : actualisation légère toutes les 5 minutes. Le VPS continue à synchroniser sans navigateur.
+
+  // ---------- Menu rétractable ----------
+  function applySide(){$('app').classList.toggle('collapsed',st.collapsed);$('side-toggle').textContent=st.collapsed?'⟩':'⟨';$('side-toggle').setAttribute('aria-expanded',!st.collapsed);$('side-toggle').setAttribute('aria-label',st.collapsed?'Ouvrir le menu':'Réduire le menu');}
+  $('side-toggle').addEventListener('click',()=>{st.collapsed=!st.collapsed;persist();applySide();});
+
+  // ---------- Démarrage ----------
+  $('period').value=st.period;$('custom-range').hidden=true;if(st.period==='custom'){st.period='7d';$('period').value='7d';}
+  applySide();statsPanes();$('bm-range').value=st.bmRange;
+  {const m=location.hash.match(/^#explorer(?:\/([0-6])\/(\d{1,2}))?$/);if(m){st.mode='B';if(m[1]!=null){st.weekday=Number(m[1]);st.hour=Math.min(23,Number(m[2]));}}}
+  if(location.pathname==='/'||!ROUTES[location.pathname.replace(/^\/+|\/+$/g,'')])history.replaceState({},'','/placement'+location.hash);
+  syncBar();show(routeFromPath(),false);
+  load();if(st.mode==='B')loadExplore();
   setInterval(()=>{load();if(st.mode==='B')loadExplore();},5*60*1000);
 })();
