@@ -15,74 +15,75 @@
       <a class="brand" href="#dashboard" aria-label="ZonePredict Accueil"><span class="pin">◉</span><span>Zone<span class="accent">Predict</span></span></a>
       <div class="side-label">ESPACE OPÉRATIONNEL</div>
       <nav aria-label="Navigation principale">
-        <a class="nav-link selected" href="#dashboard"><span>▦</span> Vue générale</a>
-        <a class="nav-link" href="#previsions"><span>◎</span> Prévisions</a>
-        <a class="nav-link" href="#quotas"><span>◔</span> Quotas des appels</a>
-        <a class="nav-link" href="#comparaison"><span>≋</span> Prévu vs réel</a>
-        <a class="nav-link" href="#zones"><span>⌖</span> Analyse des zones</a>
+        <a class="nav-link selected" href="#placement"><span>◎</span> Placement</a>
+        <a class="nav-link" href="#stats"><span>▦</span> Statistiques</a>
+        <a class="nav-link" href="#comparaison"><span>≋</span> Prévu et vécu</a>
         <a class="nav-link" href="#systeme"><span>◈</span> Santé des données</a>
       </nav>
       <div class="sidebar-footer"><div class="mini-led"></div><div><b>DataTaxi DB</b><small>Lecture seule · VPS</small></div></div>
     </aside>
     <main class="main" id="dashboard">
       <header class="topbar">
-        <div><div class="eyebrow">CENTRE DE PILOTAGE <span class="eyebrow-dot">●</span> PRÉVISION DE DEMANDE</div><h1>ZonePredict <span class="soft">/ Dashboard</span></h1><p class="subtitle">Activité taxi, signaux horaires, quotas et fiabilité sur données observées.</p></div>
-        <div class="toolbar">
-          <label class="control-label" for="period">Période d’analyse</label>
-          <select id="period" aria-label="Période d’analyse"><option value="today">Aujourd’hui</option><option value="yesterday">Hier</option><option value="week">Cette semaine</option><option value="month">Ce mois</option><option value="7d" selected>7 derniers jours</option><option value="30d">30 derniers jours</option><option value="all">Tout l’historique</option><option value="custom">Jour / plage personnalisée…</option></select>
-          <span id="custom-range" hidden><input id="range-start" type="date" aria-label="Date de début"> → <input id="range-end" type="date" aria-label="Date de fin"></span>
-          <button id="refresh" class="refresh" type="button">↻ Actualiser</button>
-        </div>
+        <div><div class="eyebrow">ZONEPREDICT</div><h1>Où me positionner ?</h1><p class="subtitle">Les endroits et les moments où les appels reviennent, avec les preuves.</p></div>
+        <div id="connection" class="connection is-warn" role="status" aria-live="polite">Vérification de la connexion…</div>
       </header>
-      <div id="connection" class="connection is-warn" role="status" aria-live="polite">Connexion API non vérifiée — chargement des données...</div>
-      <section class="panel placement-panel" id="placement">
-        <div class="panel-head"><div><div class="micro">MON PLACEMENT</div><h2 id="pl-title">Où se positionner</h2></div><span id="pl-tag" class="pill muted">Chargement</span></div>
-        <div class="pl-controls" role="group" aria-label="Choix du jour et de l’heure">
+
+      <section class="panel placement-panel" id="placement" aria-labelledby="pl-h">
+        <div class="panel-head"><div><div class="micro">PLACEMENT</div><h2 id="pl-h">Prochaine heure</h2></div>
+          <div class="modes" role="tablist" aria-label="Mode de consultation">
+            <button id="mode-a" role="tab" aria-selected="true" class="mode on" type="button">Prévision officielle</button>
+            <button id="mode-b" role="tab" aria-selected="false" class="mode" type="button">Explorer les récurrences</button>
+          </div></div>
+        <p id="pl-kind" class="kind"></p>
+        <div id="pl-controls" class="pl-controls" role="group" aria-label="Choisir le jour et l’heure" hidden>
           <div id="pl-days" class="pl-days"></div>
-          <label class="control-label" for="pl-hour">Heure</label><select id="pl-hour" aria-label="Heure recherchée"></select>
+          <label class="control-label" for="pl-hour">Heure</label><select id="pl-hour"></select>
           <button id="pl-prev" class="refresh" type="button" aria-label="Heure précédente">◀</button><button id="pl-next" class="refresh" type="button" aria-label="Heure suivante">▶</button>
-          <select id="pl-seg" aria-label="Période historique utilisée"><option value="weekday">Même jour de la semaine</option><option value="all">Tous les jours</option></select>
+          <select id="pl-seg" aria-label="Jours historiques utilisés"><option value="weekday">Même jour de la semaine</option><option value="all">Tous les jours</option></select>
           <button id="pl-now" class="refresh" type="button">Maintenant</button>
         </div>
         <div id="pl-header" class="pl-header"></div>
-        <div class="matrix-overflow" id="pl-matrix"><div class="empty">Chargement…</div></div>
-        <div class="pl-legend"><span><i class="lg lg-1"></i> peu</span><span><i class="lg lg-2"></i> moyen</span><span><i class="lg lg-3"></i> beaucoup</span><span><i class="lg lg-red"></i> Fort (≥2 dates, destination stable)</span><span>Cellule vide ≠ zéro appel</span></div>
+        <div id="pl-reco" class="reco"></div>
+        <div class="matrix-overflow" id="pl-matrix" tabindex="0" aria-label="Matrice des zones et des tranches de dix minutes"><div class="empty">Chargement…</div></div>
+        <div class="pl-legend"><span><i class="lg lg-1"></i> peu d’appels</span><span><i class="lg lg-2"></i> quelques-uns</span><span><i class="lg lg-3"></i> beaucoup</span><span><i class="lg lg-red"></i> Signal fort</span><span>Case vide : aucune donnée, pas « zéro appel »</span></div>
+        <div id="pl-cell" class="cell-detail" aria-live="polite"></div>
         <div id="pl-table" class="table-wrap"></div>
       </section>
-      <section class="kpis" aria-label="Indicateurs clés">
-        <article class="kpi"><div class="kpi-icon">▤</div><div class="kpi-label">Événements observés</div><div id="k-total" class="kpi-val">—</div><div class="kpi-caption">Période sélectionnée</div></article>
-        <article class="kpi"><div class="kpi-icon">◉</div><div class="kpi-label">Appels admissibles</div><div id="k-eligible" class="kpi-val">—</div><div class="kpi-caption">Exclusions séparées</div></article>
-        <article class="kpi"><div class="kpi-icon">⌖</div><div class="kpi-label">Zones observées</div><div id="k-zones" class="kpi-val">—</div><div class="kpi-caption">Demande géolocalisable</div></article>
-        <article class="kpi"><div class="kpi-icon">◷</div><div class="kpi-label">Jours avec données</div><div id="k-days" class="kpi-val">—</div><div class="kpi-caption">Pas une couverture complète</div></article>
-        <article class="kpi"><div class="kpi-icon">◈</div><div class="kpi-label">Prévision prochain créneau</div><div id="k-pred" class="kpi-val smaller">Non calculable</div><div class="kpi-caption">Volume si couverture attestée</div></article>
-        <article class="kpi"><div class="kpi-icon">◎</div><div class="kpi-label">Concordance observée</div><div id="k-match" class="kpi-val">—</div><div class="kpi-caption">Provisoire · pas une probabilité</div></article>
+
+      <section class="panel" id="comparaison" aria-labelledby="bm-h">
+        <div class="panel-head"><div><div class="micro">VÉRIFICATION</div><h2 id="bm-h">Prévu et vécu — dernière heure terminée</h2></div><span id="bm-tag" class="pill muted">En attente</span></div>
+        <div id="bm-cards" class="bm-cards"></div>
+        <div id="bm-table" class="table-wrap"></div>
+        <div class="panel-head sub"><h3>Évolution dans le temps</h3><select id="bm-range" aria-label="Période des graphiques"><option value="24h">24 dernières heures</option><option value="7d" selected>7 derniers jours</option><option value="all">Tout</option></select></div>
+        <div class="charts2"><div><h4>Niveaux de confiance des signaux</h4><div id="bm-conf" class="chart"></div></div><div><h4>Précision mesurée</h4><div id="bm-acc" class="chart"></div></div></div>
+        <p class="tiny">Fort, Moyen et Faible classent la récurrence. Ce ne sont pas des probabilités. Une heure sans évaluation reste vide.</p>
       </section>
-      <section class="primary" id="previsions">
-        <article class="panel panel-forecast">
-          <div class="panel-head"><div><div class="micro">SIGNAL PRÉVISIONNEL</div><h2>Prochaine heure civile</h2></div><div id="forecast-tag" class="pill muted">En attente</div></div>
-          <div id="forecast-summary" class="forecast-summary"><div class="empty">Aucune prévision figée accessible pour ce créneau.</div></div>
-          <div class="panel-foot">La fiabilité Fort / Moyen / Faible est un classement de récurrence, pas une probabilité statistique.</div>
-        </article>
-        <article class="panel panel-quotas" id="quotas"><div class="panel-head"><div><div class="micro">RÉPARTITION</div><h2>Quotas par type d’appel</h2></div><span class="hint">Toutes catégories</span></div>
-          <div class="quota-grid"><div class="donut-wrap"><div class="donut" id="donut"><div class="donut-inner"><strong id="donut-total">—</strong><span>événements</span></div></div></div><div id="quota-list" class="quota-list"><div class="empty">Données indisponibles</div></div></div>
-          <div class="panel-foot">Les catégories exclues des prévisions restent visibles dans les quotas observés.</div>
-        </article>
+
+      <section class="panel stats-head" id="stats">
+        <div class="panel-head"><div><div class="micro">STATISTIQUES</div><h2>Données observées</h2></div>
+          <div class="toolbar"><label class="control-label" for="period">Période</label>
+            <select id="period" aria-label="Période des statistiques"><option value="today">Aujourd’hui</option><option value="yesterday">Hier</option><option value="week">Cette semaine</option><option value="month">Ce mois</option><option value="7d" selected>7 derniers jours</option><option value="30d">30 derniers jours</option><option value="all">Tout l’historique</option><option value="custom">Jour ou plage au choix…</option></select>
+            <span id="custom-range" hidden><input id="range-start" type="date" aria-label="Date de début"> → <input id="range-end" type="date" aria-label="Date de fin"></span>
+            <button id="refresh" class="refresh" type="button">↻ Actualiser</button></div></div>
+        <section class="kpis" aria-label="Chiffres clés">
+          <article class="kpi"><div class="kpi-label">Appels enregistrés</div><div id="k-total" class="kpi-val">—</div><div class="kpi-caption">Toutes catégories</div></article>
+          <article class="kpi"><div class="kpi-label">Appels pris en compte</div><div id="k-eligible" class="kpi-val">—</div><div class="kpi-caption">Utilisés pour les signaux</div></article>
+          <article class="kpi"><div class="kpi-label">Zones actives</div><div id="k-zones" class="kpi-val">—</div><div class="kpi-caption">Avec des appels</div></article>
+          <article class="kpi"><div class="kpi-label">Jours avec données</div><div id="k-days" class="kpi-val">—</div><div class="kpi-caption">Un jour manquant n’est pas zéro appel</div></article>
+        </section>
+        <section class="mid">
+          <article class="panel" id="zones"><div class="panel-head"><div><div class="micro">HISTORIQUE</div><h2>Appels par jour</h2></div></div><div id="daily-chart" class="chart"></div></article>
+          <article class="panel" id="quotas"><div class="panel-head"><div><div class="micro">RÉPARTITION</div><h2>Types d’appels</h2></div></div>
+            <div class="quota-grid"><div class="donut-wrap"><div class="donut" id="donut"><div class="donut-inner"><strong id="donut-total">—</strong><span>appels</span></div></div></div><div id="quota-list" class="quota-list"><div class="empty">Aucune donnée</div></div></div>
+            <div class="panel-foot">Les types exclus restent comptés ici, mais pas dans les signaux.</div></article>
+        </section>
+        <section class="mid">
+          <article class="panel"><div class="panel-head"><div><div class="micro">TEMPS</div><h2>Appels par jour et par heure</h2></div></div><div id="heatmap" class="heatmap-holder"></div></article>
+          <article class="panel"><div class="panel-head"><div><div class="micro">ZONES</div><h2>Zones les plus actives</h2></div></div><div id="zones-table" class="table-wrap"></div></article>
+        </section>
+        <article class="panel" id="systeme"><div class="panel-head"><div><div class="micro">SOURCE</div><h2>Santé des données</h2></div><span id="source-state" class="pill muted">Non vérifié</span></div><div id="system-status" class="system-box"></div></article>
       </section>
-      <section class="panel matrix-panel" id="matrice">
-        <div class="panel-head"><div><div class="micro">MATRICE DE RÉCURRENCE</div><h2>Zones × 6 tranches de dix minutes</h2></div><span class="hint">Occurrences historiques · non probabilistes</span></div>
-        <div class="matrix-overflow" id="forecast-matrix"><div class="empty">Matrice disponible dès la première prévision figée.</div></div>
-        <div class="matrix-foot"><span><i class="legend-dot low-dot"></i> Faible</span><span><i class="legend-dot medium-dot"></i> Moyen</span><span><i class="legend-dot strong-dot"></i> Fort (destination stable)</span><span>Cellule vide ≠ zéro appel</span></div>
-      </section>
-      <section class="mid">
-        <article class="panel" id="zones"><div class="panel-head"><div><div class="micro">HISTORIQUE</div><h2>Évolution des appels reçus</h2></div><span class="hint">Jours observés</span></div><div id="daily-chart" class="chart"></div><div class="panel-foot">Un jour sans capture n'est jamais interprété comme zéro appel.</div></article>
-        <article class="panel"><div class="panel-head"><div><div class="micro">TEMPORALITÉ</div><h2>Activité par jour / heure</h2></div><span class="hint">Occurrences</span></div><div id="heatmap" class="heatmap-holder"></div><div class="panel-foot">Une cellule vide signifie « aucune capture disponible », pas « aucun appel ».</div></article>
-      </section>
-      <section class="bottom">
-        <article class="panel" id="comparaison"><div class="panel-head"><div><div class="micro">ÉVALUATION</div><h2>Prévisions vs appels réels</h2></div><span class="pill muted">Historique figé</span></div><div id="comparative" class="comparison"></div><div id="eval-table" class="table-wrap"></div></article>
-        <article class="panel"><div class="panel-head"><div><div class="micro">ZONES</div><h2>Top zones actives</h2></div><span class="hint">Admissibles uniquement</span></div><div id="zones-table" class="table-wrap"></div></article>
-        <article class="panel" id="systeme"><div class="panel-head"><div><div class="micro">QUALITÉ DES DONNÉES</div><h2>Connexion et contrôle</h2></div><span id="source-state" class="pill muted">Non vérifié</span></div><div id="system-status" class="system-box"></div><div class="panel-foot">Jeton Bearer conservé uniquement côté serveur. Pas de données fictives.</div></article>
-      </section>
-      <footer class="footer">ZonePredict · Un dashboard permanent · Données synchronisées toutes les 5 min · Prévision figée à :50 (America/Toronto) <span id="last-render"></span></footer>
+      <footer class="footer">Synchronisation aux 5 minutes · Prévision figée à :50 (heure de Toronto) <span id="last-render"></span></footer>
     </main>
   </div>
 </body>

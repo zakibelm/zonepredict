@@ -15,48 +15,6 @@
     try { const date=new Date(value); if(Number.isNaN(date.getTime()))return String(value).slice(0,19); return date.toLocaleString('fr-CA',{timeZone:'America/Toronto',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
     catch{return String(value).slice(0,19);}
   }
-  function zoneForecast(f){
-    if(!f) { $('forecast-tag').textContent='Aucune prévision';$('forecast-tag').className='pill muted';$('forecast-summary').innerHTML='<div class="empty">Aucun snapshot prévisionnel pour ce créneau. Le premier calcul est prévu à :50, après collecte de l’historique.</div>';return; }
-    const d=f.result; const zones=d.zone_ranking||[];
-    $('forecast-tag').textContent='Figée à :50';$('forecast-tag').className='pill good';
-    const target=esc(d.target_start?.slice(11,16))+'–'+esc(d.target_end?.slice(11,16));
-    let content=`<div class="forecast-time">${target} <span class="tiny">America/Toronto</span></div><div class="forecast-sub">${esc(d.segment)} · Volume : <b>${d.predicted_volume==null?'non estimable':fmt(d.predicted_volume)+' appels'}</b> · ${esc(d.historical_days_with_calls)} jour(s) avec activité historique pour ce créneau</div>`;
-    if (!zones.length) content += '<div class="empty">Pas encore de signaux historiques admissibles pour cette heure.</div>';
-    else {
-      content += '<div class="signal-list">';
-      zones.slice(0,6).forEach((z,i) => {
-        const conf=z.fort_bins?'Fort':z.moyen_bins?'Moyen':'Faible';
-        content += `<div class="signal"><div class="signal-r"><span class="rank">${i+1}</span><div><label>Zone ${esc(z.zone)}</label><div><small>${fmt(z.occurrences)} occurrences historiques · ${z.fort_bins} Fort / ${z.moyen_bins} Moyen / ${z.faible_bins} Faible</small></div></div></div><span class="pill ${conf==='Fort'?'good':conf==='Moyen'?'medium':'low'}">${esc(conf)}</span></div>`;
-      });
-      content+='</div>';
-      if(!d.placement?.length)content+='<p class="tiny">Placement non recommandable sans signal Fort démontré.</p>';
-      else content+=`<p class="tiny well">Placement prioritaire (signal Fort) : ${d.placement.slice(0,3).map(z=>'zone '+esc(z.zone)).join(', ')}</p>`;
-    }
-    content += `<p class="tiny">${esc(d.note||'')}</p>`;
-    $('forecast-summary').innerHTML=content;
-  }
-  function forecastMatrix(f){
-    if(!f || !Array.isArray(f.result?.matrix) || !f.result.matrix.length){
-      $('forecast-matrix').innerHTML='<div class="empty">Aucune occurrence historique disponible pour cette heure, ou calcul non exécuté.</div>';return;
-    }
-    const p=f.result, hour=p.target_start.slice(11,13), zones=[...new Set(p.matrix.map(c=>c.zone))].sort((a,b)=>Number(a)-Number(b));
-    const lookup=new Map(p.matrix.map(c=>[`${c.zone}:${c.bin}`,c]));
-    let html=`<table class="matrix-table" aria-label="Matrice ZonePredict des occurrences par zone et créneau"><thead><tr><th>Zone</th>`;
-    for(let b=0;b<6;b++){const a=`${hour}:${String(b*10).padStart(2,'0')}`,z=`${String((Number(hour)+(b===5?1:0))%24).padStart(2,'0')}:${String(((b+1)%6)*10).padStart(2,'0')}`;html+=`<th>${a}–${z}</th>`;}
-    html+='</tr></thead><tbody>';
-    for(const zone of zones){html+=`<tr><td class="zone-name">Zone ${esc(zone)}</td>`;
-      for(let b=0;b<6;b++){
-        const c=lookup.get(`${zone}:${b}`);
-        if(!c){html+='<td class="cell-blank" aria-label="Pas de données"></td>';continue;}
-        const cls=c.confidence==='Fort'?'cell-fort':c.confidence==='Moyen'?'cell-medium':'';
-        const color=c.occurrences>=12?'#24669c':c.occurrences>=5?'#218f91':c.occurrences>=2?'#3c9878':'#837c49';
-        const dest=c.destinations?.map(x=>`${x.zone} (${x.count})`).join(', ')||'inconnue';
-        html+=`<td class="${cls}" style="background:${color}" title="${esc(c.confidence)} · ${fmt(c.occurrences)} occurrences · ${fmt(c.distinct_dates)} dates distinctes · destinations: ${esc(dest)}"><div class="cell-num">${fmt(c.occurrences)}</div><span class="cell-tag">${esc(c.confidence.toUpperCase())}</span></td>`;
-      }
-      html+='</tr>';
-    }
-    $('forecast-matrix').innerHTML=html+'</tbody></table>';
-  }
   function quotas(items,total){
     if(!items?.length){$('quota-list').innerHTML='<div class="empty">Aucun quota disponible</div>';$('donut').style.background='#274550';set('donut-total','—');return;}
     let cursor=0;
@@ -97,13 +55,6 @@
     if(!zones?.length){$('zones-table').innerHTML='<div class="empty">Aucune zone admissible enregistrée.</div>';return;}
     $('zones-table').innerHTML=`<table class="table"><thead><tr><th>Zone</th><th class="num">Appels observés</th><th class="num">Part des zones</th></tr></thead><tbody>${zones.slice(0,12).map((z,i)=>`<tr><td><span class="rank">${i+1}</span> &nbsp; Zone ${esc(z.zone)}</td><td class="num">${fmt(z.count)}</td><td class="num">${pct(z.count/zones.reduce((a,x)=>a+Number(x.count),0)*100)}</td></tr>`).join('')}</tbody></table>`;
   }
-  function comparison(d){
-    const c=d.comparison||{};
-    $('comparative').innerHTML=`<div class="metric"><span>Concordance zone + tranche</span><b>${pct(c.coverage_pct)}</b></div><div class="metric"><span>Appels vérifiés dans l’évaluation</span><b>${fmt(c.known_zone_events)}</b></div><div class="metric"><span>Évaluations historiques</span><b>${fmt(c.evaluated_slots)}</b></div><div class="metric"><span>Confiance calibrée</span><b>Non établie</b></div>`;
-    const rows=(d.evaluations||[]).slice(0,8);
-    if(!rows.length){$('eval-table').innerHTML='<div class="empty">Aucun créneau évalué : le journal figé se constituera dès les premiers bulletins.</div>';return;}
-    $('eval-table').innerHTML=`<table class="table"><thead><tr><th>Créneau</th><th class="num">Observés</th><th class="num">Concordants</th><th class="num">Écart non couvert</th></tr></thead><tbody>${rows.map(x=>{const r=x.result;return `<tr><td>${esc(x.target_start.slice(5,16))}</td><td class="num">${fmt(r.observed_in_window)}</td><td class="num">${fmt(r.matched_zone_and_bin)}</td><td class="num">${fmt(r.unanticipated_observed)}</td></tr>`;}).join('')}</tbody></table><p class="tiny">Provisoire : la couverture du dispatch n'est pas attestée, et les appels observés sans zone ne sont pas affectés arbitrairement.</p>`;
-  }
   function system(d){
     const sync=d.source?.last_sync;
     const state=!d.source?.configured?'Non configuré':!sync?'Jamais synchronisé':sync.state==='success'?'Dernière lecture OK':'Erreur de lecture';
@@ -112,72 +63,147 @@
     const msg=sync?.state==='error'?`<p class="error-note">${esc(sync.message||'Erreur non précisée')}</p>`:'';
     $('system-status').innerHTML=`<div class="system-row"><span>Source de vérité</span><strong>${esc(d.source?.name||'DataTaxi DB')}</strong></div><div class="system-row"><span>Dernière synchronisation tentée</span><strong>${esc(timeFmt(sync?.completed_at||sync?.requested_at))} ${sync?.state==='success'?'· réussie':''}</strong>${msg}</div><div class="system-row"><span>Dernière course observée</span><strong>${esc(d.source?.last_event||'Non disponible')}</strong></div><div class="system-row"><span>Enregistrements en cache</span><strong>${fmt(d.source?.records_cached)} · ${fmt(d.source?.days_cached)} jours avec événements</strong></div><div class="system-row"><span>Zones inconnues (période)</span><strong>${fmt(d.kpi?.demand_zone_unknown)}</strong></div><div class="system-row"><span>Événements incomplets conservés hors calcul</span><strong>${fmt(d.source?.quarantined)}</strong></div>`;
   }
+  // ===== Placement : mode A (prévision officielle figée) / mode B (récurrences explorées) =====
+  const fullDays=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+  const hh=h=>String(((h%24)+24)%24).padStart(2,'0');
+  const st={mode:'A',weekday:null,hour:null,seg:'weekday',sel:null,board:null};
+  function gradient(n,max){const t=max<=1?0:Math.min(1,(n-1)/(max-1));const S=[[243,211,74],[79,207,116],[59,134,217]];const [a,b,f]=t<.5?[S[0],S[1],t*2]:[S[1],S[2],(t-.5)*2];return 'rgb('+a.map((v,i)=>Math.round(v+(b[i]-v)*f)).join(',')+')';}
+  const plural=(n,one,many)=>`${fmt(n)} ${n===1?one:many}`;
+  const destName=x=>x.zone==='Inconnue'?'destination inconnue':'zone '+esc(x.zone);
+  const destText=c=>(c.destinations||[]).map(x=>`${destName(x)} (${pct(x.share)})`).join(', ')||'destination inconnue';
+  const binLabel=(h,b)=>`${hh(h)}:${String(b*10).padStart(2,'0')}–${hh(h+(b===5?1:0))}:${String(((b+1)%6)*10).padStart(2,'0')}`;
+  const confClass=c=>c==='Fort'?'Fort':c==='Moyen'?'Moyen':'Faible';
+  function setMode(m){
+    st.mode=m;st.sel=null;
+    $('mode-a').classList.toggle('on',m==='A');$('mode-b').classList.toggle('on',m==='B');
+    $('mode-a').setAttribute('aria-selected',m==='A');$('mode-b').setAttribute('aria-selected',m==='B');
+    $('pl-controls').hidden=m!=='B';
+    m==='A'?showOfficial():loadExplore();
+  }
+  function showOfficial(){
+    const d=dataset,fc=d&&(d.forecast?.upcoming||d.forecast?.current);
+    $('pl-kind').innerHTML='<b>Prévision officielle.</b> Calculée à :50 avec les appels connus à ce moment-là, puis figée. Elle ne change plus.';
+    if(!fc){
+      document.querySelector('.pl-legend').hidden=true;
+      $('pl-h').textContent='Prochaine heure';$('pl-header').innerHTML='';$('pl-reco').innerHTML='';
+      $('pl-matrix').innerHTML='<div class="empty">Pas encore de prévision officielle pour la prochaine heure. Elle est figée à :50. Pour voir les récurrences d’un jour et d’une heure, utilise « Explorer les récurrences ».</div>';
+      $('pl-cell').innerHTML='';$('pl-table').innerHTML='';return;}
+    const r=fc.result,h=Number(r.target_start.slice(11,13)),wd=(new Date(r.target_start.slice(0,10)+'T12:00:00').getDay()+6)%7;
+    st.board={hour:h,cells:r.matrix||[],official:true,
+      title:`${fullDays[wd]} · ${hh(h)} h – ${hh(h+1)} h`,
+      header:[['Figée à',timeFmt(r.issued_at)],['Jours historiques utilisés',fmt(r.historical_days_with_calls)],['Périmètre',r.segment],['Dernier appel connu',d.source?.last_event||'—'],['Couverture','non établie · volume non estimable']],
+      reco:(r.placement||[]).slice(0,5).map(z=>z.zone)};
+    renderBoard();
+  }
+  async function loadExplore(){
+    const qs=new URLSearchParams({segment:st.seg});if(st.weekday!=null)qs.set('weekday',st.weekday);if(st.hour!=null)qs.set('hour',st.hour);
+    $('pl-kind').innerHTML='<b>Récurrences historiques.</b> Ce que les jours passés montrent pour le jour et l’heure choisis. Ce n’est pas la prévision officielle.';
+    try{
+      const r=await fetch('/api/placement?'+qs,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
+      const d=await r.json();st.weekday=d.query.weekday;st.hour=d.query.hour;syncControls();
+      const cells=d.matrix||[];
+      st.board={hour:d.query.hour,cells,official:false,title:`${fullDays[d.query.weekday]} · ${hh(d.query.hour)} h – ${hh(d.query.hour+1)} h`,
+        header:[['Jours historiques',d.query.segment==='weekday'?'Seulement des '+fullDays[d.query.weekday].toLowerCase()+'s':'Tous les jours'],['Dates utilisées',fmt(d.header.history_dates)],['Appels utilisés',fmt(d.header.history_events)],['Dernier appel connu',d.header.last_event||'—'],['Couverture','non établie · volume non estimable']],
+        reco:[...new Set(cells.filter(c=>c.confidence==='Fort').map(c=>c.zone))].sort((a,b)=>a-b)};
+      st.sel=null;renderBoard();
+    }catch(e){$('pl-matrix').innerHTML='<div class="empty error-note">Impossible de charger les récurrences ('+esc(e.message)+'). Réessaie avec « Actualiser ».</div>';}
+  }
+  function renderBoard(){
+    const B=st.board,cells=B.cells,h=B.hour;
+    document.querySelector('.pl-legend').hidden=!cells.length;
+    $('pl-h').textContent=B.title;
+    $('pl-header').innerHTML=B.header.map(([k,v])=>`<span>${esc(k)} : <b>${esc(v)}</b></span>`).join('');
+    $('pl-reco').innerHTML=B.reco.length
+      ?`<div class="reco-on"><span class="reco-lbl">${B.official?'Recommandation':'Signaux forts dans l’historique'}</span> ${B.reco.map(z=>'<b>zone '+esc(z)+'</b>').join(' · ')}<small>${B.official?'Au moins deux dates et une destination stable.':'Repère historique seulement, pas une recommandation officielle.'}</small></div>`
+      :'<div class="reco-off">Aucun signal fort pour ce créneau. Les signaux moyens ou faibles sont à titre informatif.</div>';
+    if(!cells.length){$('pl-matrix').innerHTML='<div class="empty">Aucun appel admissible dans l’historique pour ce jour et cette heure. Ça ne veut pas dire « zéro appel » : seulement aucune donnée enregistrée.</div>';$('pl-cell').innerHTML='';$('pl-table').innerHTML='';return;}
+    const zones=[...new Set(cells.map(c=>c.zone))].sort((a,b)=>Number(a)-Number(b));
+    const max=Math.max(...cells.map(c=>c.occurrences)),look=new Map(cells.map(c=>[c.zone+':'+c.bin,c]));
+    let html='<table class="matrix-table pm"><thead><tr><th scope="col">Zone</th>';
+    for(let b=0;b<6;b++)html+=`<th scope="col">${binLabel(h,b)}</th>`;
+    html+='</tr></thead><tbody>';
+    for(const z of zones){html+=`<tr><th scope="row" class="zone-name">Zone ${esc(z)}</th>`;
+      for(let b=0;b<6;b++){const c=look.get(z+':'+b),k=z+':'+b;
+        html+=c?`<td class="pc ${c.confidence==='Fort'?'fort':''} ${st.sel===k?'sel':''}" data-k="${k}" tabindex="0" role="button" style="background:${gradient(c.occurrences,max)};color:${(max>1&&(c.occurrences-1)/(max-1)>=.75)?'#fff':'#06141b'}" aria-label="Zone ${esc(z)}, ${binLabel(h,b)}, ${plural(c.occurrences,'appel','appels')}, ${plural(c.distinct_dates,'date','dates')}, confiance ${esc(c.confidence)}"><span class="n1">${plural(c.occurrences,'appel','appels')}</span><span class="n2">${plural(c.distinct_dates,'date','dates')}</span></td>`:'<td class="cell-blank"></td>';}
+      html+='</tr>';}
+    $('pl-matrix').innerHTML=html+'</tbody></table>';
+    let t='<table class="table"><thead><tr><th>Zone</th><th>Heure</th><th>Destination (part réelle)</th><th class="num">Appels</th><th class="num">Dates</th><th>Confiance</th></tr></thead><tbody>';
+    cells.forEach(c=>{const k=c.zone+':'+c.bin;t+=`<tr class="dt-row ${st.sel===k?'sel':''}" data-k="${k}" tabindex="0"><td>Zone ${esc(c.zone)}</td><td>${binLabel(h,c.bin)}</td><td>${destText(c)}</td><td class="num">${fmt(c.occurrences)}</td><td class="num">${fmt(c.distinct_dates)}</td><td class="conf-${confClass(c.confidence)}">${esc(c.confidence)}</td></tr>`;});
+    $('pl-table').innerHTML=t+'</tbody></table>';
+    const pick=k=>{st.sel=st.sel===k?null:k;renderBoard();if(st.sel)$('pl-cell').scrollIntoView({block:'nearest',behavior:'smooth'});};
+    document.querySelectorAll('#pl-matrix [data-k],#pl-table [data-k]').forEach(el=>{el.addEventListener('click',()=>pick(el.dataset.k));el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick(el.dataset.k);}});});
+    renderCellDetail();
+  }
+  function renderCellDetail(){
+    const B=st.board,c=st.sel&&B.cells.find(x=>x.zone+':'+x.bin===st.sel);
+    if(!c){$('pl-cell').innerHTML='<p class="tiny">Touche une case ou une ligne pour voir les dates, les heures et les destinations.</p>';return;}
+    const det=c.dates_detail&&c.dates_detail.length?c.dates_detail:(c.historical_dates||[]).map(d=>({date:d,count:null,times:[]}));
+    $('pl-cell').innerHTML=`<div class="cd-head"><b>Zone ${esc(c.zone)} · ${binLabel(B.hour,c.bin)}</b><span class="conf-${confClass(c.confidence)}">${esc(c.confidence)}</span></div>
+      <p>${plural(c.occurrences,'appel','appels')} sur ${plural(c.distinct_dates,'date','dates')} · ${destText(c)}</p><p class="tiny">${esc(c.confidence_reason||'')}</p>
+      <ul class="cd-dates">${det.map(x=>`<li><b>${esc(x.date)}</b>${x.count!=null?' · '+plural(x.count,'appel','appels'):''}${x.times?.length?' · '+x.times.map(esc).join(', '):''}</li>`).join('')}</ul>
+      ${c.dates_detail?'':'<p class="tiny">Cette prévision a été figée avant l’ajout du détail des heures : seules les dates sont conservées.</p>'}`;
+  }
+  function syncControls(){
+    $('pl-days').innerHTML=fullDays.map((n,i)=>`<button type="button" data-d="${i}" class="${i===st.weekday?'on':''}" aria-pressed="${i===st.weekday}">${n.slice(0,3)}</button>`).join('');
+    $('pl-days').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{st.weekday=Number(b.dataset.d);loadExplore();}));
+    if(!$('pl-hour').options.length)$('pl-hour').innerHTML=Array.from({length:24},(_,i)=>`<option value="${i}">${hh(i)} h – ${hh(i+1)} h</option>`).join('');
+    $('pl-hour').value=st.hour;$('pl-seg').value=st.seg;
+  }
+  // ===== Prévu et vécu =====
+  function benchmark(d){
+    const evs=(d.evaluations||[]),fcs=d.forecast?.history||[];
+    const ev=evs[0];
+    if(!ev){
+      $('bm-tag').textContent='Pas encore évaluable';$('bm-tag').className='pill muted';
+      $('bm-cards').innerHTML='<div class="empty">Aucune comparaison pour l’instant. Une prévision peut être comparée une fois son heure terminée (vers H:05). Rien n’est simulé.</div>';$('bm-table').innerHTML='';
+    }else{
+      const r=ev.result,f=fcs.find(x=>x.target_start===ev.target_start)?.result,cells=f?.matrix||[];
+      const fort=cells.filter(c=>c.confidence==='Fort').length;
+      $('bm-tag').textContent=r.final?'Évaluation finale':'Évaluation provisoire';$('bm-tag').className='pill warn';
+      $('bm-cards').innerHTML=`<div class="bm-h">${esc(ev.target_start.slice(0,10))} · ${esc(ev.target_start.slice(11,16))}–${esc(r.target_end.slice(11,16))}</div>
+        <div class="bm-3"><div class="bm-col"><h4>Prévu</h4><b>${fmt(cells.length)}</b><span>cases signalées (${fmt(fort)} fortes)</span><small>Volume : non estimé</small></div>
+        <div class="bm-col"><h4>Vécu</h4><b>${fmt(r.observed_known_zone)}</b><span>appels avec zone connue</span><small>${fmt(r.observed_unknown_zone)} sans zone</small></div>
+        <div class="bm-col"><h4>Écart</h4><b>${fmt(r.matched_zone_and_bin)} / ${fmt(r.unanticipated_observed)}</b><span>annoncés / non annoncés</span><small>Écart de volume : non calculable</small></div></div>
+        <p class="tiny">${esc(r.caution||'')}</p>`;
+      const real=r.real_by_zone_bin||{},keys=new Map();
+      cells.forEach(c=>keys.set(c.zone+'|'+c.bin,{zone:c.zone,bin:c.bin,pred:c,real:0}));
+      Object.entries(real).forEach(([k,n])=>{const [z,b]=k.split('|');const o=keys.get(k)||{zone:z,bin:Number(b),pred:null,real:0};o.real=n;keys.set(k,o);});
+      const h=Number(ev.target_start.slice(11,13));
+      const rows=[...keys.values()].sort((a,b)=>Number(a.zone)-Number(b.zone)||a.bin-b.bin);
+      $('bm-table').innerHTML=rows.length?`<table class="table"><thead><tr><th>Zone</th><th>Tranche</th><th>Prévu</th><th class="num">Vécu</th><th>Résultat</th></tr></thead><tbody>${rows.map(o=>`<tr><td>Zone ${esc(o.zone)}</td><td>${binLabel(h,o.bin)}</td><td>${o.pred?esc(o.pred.confidence)+' · '+plural(o.pred.occurrences,'appel','appels')+' dans l’historique':'—'}</td><td class="num">${fmt(o.real)}</td><td>${o.pred&&o.real?'Annoncé et observé':o.pred?'Annoncé, non observé (couverture non établie)':'Non annoncé'}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Aucun signal ni appel dans cette heure.</div>';
+    }
+    trendCharts(d);
+  }
+  function trendCharts(d){
+    const range=$('bm-range').value,now=Date.now(),lim=range==='24h'?864e5:range==='7d'?6048e5:Infinity;
+    const within=t=>now-new Date(t.replace(' ','T')).getTime()<=lim;
+    const fcs=(d.forecast?.history||[]).filter(f=>within(f.target_start)).slice().reverse();
+    const evs=(d.evaluations||[]).filter(e=>within(e.target_start)).slice().reverse();
+    const bars=(items,name)=>items.length?items:[];
+    // Confiance : barres empilées par prévision (nombre de cases)
+    if(!fcs.length)$('bm-conf').innerHTML='<div class="empty">Aucune prévision sur cette période.</div>';
+    else{const W=520,H=170,L=30,mx=Math.max(1,...fcs.map(f=>(f.result.matrix||[]).length)),bw=Math.max(6,Math.min(34,(W-L)/fcs.length-6));
+      const col={Fort:'#ff6b6b',Moyen:'#f4be61',Faible:'#6d8793'};
+      let g='';fcs.forEach((f,i)=>{let y=H-24;const x=L+i*((W-L)/fcs.length)+3;
+        ['Faible','Moyen','Fort'].forEach(k=>{const n=(f.result.matrix||[]).filter(c=>c.confidence===k).length,hgt=n/mx*(H-40);y-=hgt;g+=`<rect x="${x}" y="${y}" width="${bw}" height="${hgt}" fill="${col[k]}"><title>${f.target_start.slice(5,16)} · ${k} : ${n}</title></rect>`;});
+        g+=`<text x="${x+bw/2}" y="${H-8}" font-size="9" fill="#9bb4c0" text-anchor="middle">${f.target_start.slice(11,13)}h</text>`;});
+      $('bm-conf').innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Nombre de signaux Fort, Moyen et Faible par prévision">${g}</svg><div class="pl-legend"><span><i class="lg" style="background:#ff6b6b"></i> Fort</span><span><i class="lg" style="background:#f4be61"></i> Moyen</span><span><i class="lg" style="background:#6d8793"></i> Faible</span></div>`;}
+    // Précision : part des appels annoncés ; périodes non évaluables = vides
+    const pts=evs.filter(e=>e.result.observed_match_share!=null);
+    if(!pts.length)$('bm-acc').innerHTML='<div class="empty">Aucune heure évaluable sur cette période. Les heures sans évaluation restent vides, jamais à zéro.</div>';
+    else{const W=520,H=170,L=34;const X=i=>pts.length===1?W/2:L+i/(pts.length-1)*(W-L-12),Y=v=>H-26-(v/100)*(H-44);
+      $('bm-acc').innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Part des appels annoncés par heure évaluée"><line x1="${L}" y1="${Y(0)}" x2="${W-8}" y2="${Y(0)}" stroke="#35515d"/><line x1="${L}" y1="${Y(100)}" x2="${W-8}" y2="${Y(100)}" stroke="#35515d" stroke-dasharray="3"/><text x="4" y="${Y(100)+3}" font-size="9" fill="#9bb4c0">100 %</text><text x="4" y="${Y(0)+3}" font-size="9" fill="#9bb4c0">0 %</text><polyline fill="none" stroke="#29e2df" stroke-width="2" points="${pts.map((e,i)=>X(i)+','+Y(e.result.observed_match_share)).join(' ')}"/>${pts.map((e,i)=>`<circle cx="${X(i)}" cy="${Y(e.result.observed_match_share)}" r="4" fill="#29e2df"><title>${e.target_start.slice(5,16)} · ${pct(e.result.observed_match_share)} annoncés · ${e.result.unanticipated_observed} non annoncés</title></circle>`).join('')}</svg><p class="tiny">${pts.length} heure(s) évaluée(s). Évaluations provisoires : la couverture n’est pas établie.</p>`;}
+  }
   function render(d){
     dataset=d;
     set('k-total',fmt(d.kpi.total_events));set('k-eligible',fmt(d.kpi.eligible_events));set('k-zones',fmt(d.kpi.active_zones));set('k-days',fmt(d.kpi.days_observed));
-    set('k-match',pct(d.comparison.coverage_pct));
-    const fc=d.forecast?.upcoming||d.forecast?.current;
-    set('k-pred',fc?.result?.predicted_volume==null?'Non estimable':fmt(fc.result.predicted_volume));
     const sync=d.source?.last_sync;
-    if(sync?.state==='success')message(`Lecture DataTaxi confirmée · ${fmt(d.source.records_cached)} événements en cache · Dernière course : ${d.source.last_event||'non connue'} · Sync : ${timeFmt(sync.completed_at)}`,'good');
-    else if(sync?.state==='error')message('Lecture DataTaxi échouée · '+(sync.message||'Erreur inconnue')+' · les chiffres affichés sont uniquement le cache historique','error');
-    else message('Connexion DataTaxi non vérifiée · aucune actualisation authentifiée confirmée. Aucun chiffre estimé n’est affiché.','warn');
-    zoneForecast(fc);forecastMatrix(fc);quotas(d.quotas,d.kpi.total_events);lineChart(d.by_date);heatmap(d.heatmap);tableZones(d.zones);comparison(d);system(d);set('last-render','Affichage : '+timeFmt(d.now));
-  }
-  // ---- Mon placement : récurrences historiques par jour de semaine + heure (sans snapshot) ----
-  const fullDays=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
-  const pl={weekday:null,hour:null,seg:'weekday',open:new Set()};
-  const hh=h=>String(h%24).padStart(2,'0');
-  function gradient(n,max){ // jaune → vert → bleu
-    const t=max<=1?0:Math.min(1,(n-1)/(max-1));
-    const stops=[[243,211,74],[79,207,116],[59,134,217]];
-    const [a,b,f]=t<.5?[stops[0],stops[1],t*2]:[stops[1],stops[2],(t-.5)*2];
-    return 'rgb('+a.map((v,i)=>Math.round(v+(b[i]-v)*f)).join(',')+')';
-  }
-  function binLabel(c){return c.start+'–'+c.end;}
-  function destText(c){return (c.destinations||[]).map(x=>`${x.zone==='Inconnue'?'Inconnue':'Zone '+esc(x.zone)} (${pct(x.share)})`).join(', ')||'Inconnue';}
-  function renderPlacement(d){
-    const h=d.query.hour;
-    $('pl-title').textContent=`${fullDays[d.query.weekday]} · ${d.header.slot}`;
-    $('pl-tag').textContent=d.query.segment==='weekday'?'Même jour de semaine':'Tous les jours';$('pl-tag').className='pill good';
-    $('pl-header').innerHTML=`<span>Jour : <b>${fullDays[d.query.weekday]}</b></span><span>Créneau : <b>${esc(d.header.slot)}</b> (${esc(d.header.timezone)})</span><span>Historique utilisé : <b>${fmt(d.header.history_dates)}</b> date(s) · <b>${fmt(d.header.history_events)}</b> appels</span><span>Source : ${esc(d.header.source)}</span><span>Dernier événement : <b>${esc(d.header.last_event||'—')}</b></span><span>Couverture : ${esc(d.header.coverage)}</span><span>Volume estimé : <b>non estimable</b></span>`;
-    const cells=d.matrix||[];
-    if(!cells.length){$('pl-matrix').innerHTML='<div class="empty">Aucune récurrence historique admissible pour ce jour et cette heure. Ce n’est pas « zéro appel » : seulement aucune capture enregistrée.</div>';$('pl-table').innerHTML='';return;}
-    const max=Math.max(...cells.map(c=>c.occurrences)),lookup=new Map(cells.map(c=>[c.zone+':'+c.bin,c]));
-    let html='<table class="matrix-table pm"><thead><tr><th>Zone</th>';
-    for(let b=0;b<6;b++)html+=`<th>${hh(h)}:${String(b*10).padStart(2,'0')}–${hh(h+(b===5?1:0))}:${String(((b+1)%6)*10).padStart(2,'0')}</th>`;
-    html+='</tr></thead><tbody>';
-    for(const z of d.zones){html+=`<tr><td class="zone-name">Zone ${esc(z)}</td>`;
-      for(let b=0;b<6;b++){const c=lookup.get(z+':'+b);
-        html+=c?`<td class="pc ${c.confidence==='Fort'?'fort':''}" style="background:${gradient(c.occurrences,max)}" title="${esc(c.confidence)} · ${c.distinct_dates} dates · destination : ${esc(destText(c))}">${fmt(c.occurrences)}<small>${c.confidence==='Fort'?'→ '+esc(destText(c).split(' (')[0])+' · ':''}${c.distinct_dates} d.</small></td>`:'<td class="cell-blank"></td>';}
-      html+='</tr>';}
-    $('pl-matrix').innerHTML=html+'</tbody></table>';
-    let t='<table class="table"><thead><tr><th>Zone</th><th>Heure</th><th>Destination (part réelle)</th><th class="num">Occurrence</th><th>Confiance</th></tr></thead><tbody>';
-    cells.forEach(c=>{const k=c.zone+':'+c.bin,op=pl.open.has(k);
-      t+=`<tr class="dt-row" data-k="${k}"><td>Zone ${esc(c.zone)}</td><td>${esc(binLabel(c))}</td><td>${destText(c)}</td><td class="num">${fmt(c.occurrences)} · ${c.distinct_dates} date(s)</td><td class="conf-${c.confidence}" title="${esc(c.confidence_reason)}">${c.confidence}</td></tr>`;
-      if(op)t+=`<tr class="dt-detail"><td colspan="5">${(c.dates_detail||[]).map(x=>`<div><b>${esc(x.date)}</b> · ${x.count} appel(s) · ${x.times.map(esc).join(', ')}</div>`).join('')}<div class="tiny">${esc(c.confidence_reason)}</div></td></tr>`;});
-    $('pl-table').innerHTML=t+'</tbody></table>';
-    $('pl-table').querySelectorAll('.dt-row').forEach(r=>r.addEventListener('click',()=>{const k=r.dataset.k;pl.open.has(k)?pl.open.delete(k):pl.open.add(k);renderPlacement(d);}));
-  }
-  async function loadPlacement(){
-    const qs=new URLSearchParams({segment:pl.seg});if(pl.weekday!=null)qs.set('weekday',pl.weekday);if(pl.hour!=null)qs.set('hour',pl.hour);
-    try{const r=await fetch('/api/placement?'+qs,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
-      const d=await r.json();pl.weekday=d.query.weekday;pl.hour=d.query.hour;syncPlacementControls();renderPlacement(d);}
-    catch(e){$('pl-matrix').innerHTML='<div class="empty">Impossible de charger le placement : '+esc(e.message)+'</div>';}
-  }
-  function syncPlacementControls(){
-    $('pl-days').innerHTML=fullDays.map((n,i)=>`<button type="button" data-d="${i}" class="${i===pl.weekday?'on':''}">${n.slice(0,3)}</button>`).join('');
-    $('pl-days').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{pl.weekday=Number(b.dataset.d);pl.open.clear();loadPlacement();}));
-    if(!$('pl-hour').options.length)$('pl-hour').innerHTML=Array.from({length:24},(_,i)=>`<option value="${i}">${hh(i)} h – ${hh(i+1)} h</option>`).join('');
-    $('pl-hour').value=pl.hour;$('pl-seg').value=pl.seg;
-  }
-  function initPlacement(){
-    $('pl-hour').addEventListener('change',()=>{pl.hour=Number($('pl-hour').value);pl.open.clear();loadPlacement();});
-    $('pl-seg').addEventListener('change',()=>{pl.seg=$('pl-seg').value;loadPlacement();});
-    $('pl-prev').addEventListener('click',()=>{if(pl.hour==null)return;if(pl.hour===0){pl.hour=23;pl.weekday=(pl.weekday+6)%7;}else pl.hour--;pl.open.clear();loadPlacement();});
-    $('pl-next').addEventListener('click',()=>{if(pl.hour==null)return;if(pl.hour===23){pl.hour=0;pl.weekday=(pl.weekday+1)%7;}else pl.hour++;pl.open.clear();loadPlacement();});
-    $('pl-now').addEventListener('click',()=>{pl.weekday=null;pl.hour=null;pl.open.clear();loadPlacement();});
-    loadPlacement();
+    if(sync?.state==='success')message(`Données à jour · dernier appel ${d.source.last_event||'inconnu'} · synchronisé ${timeFmt(sync.completed_at)}`,'good');
+    else if(sync?.state==='error')message('Lecture des données en erreur · '+(sync.message||'cause inconnue')+' · on affiche seulement l’historique déjà reçu','error');
+    else message('Connexion aux données non confirmée','warn');
+    quotas(d.quotas,d.kpi.total_events);lineChart(d.by_date);heatmap(d.heatmap);tableZones(d.zones);system(d);benchmark(d);
+    set('last-render','· Affiché à '+timeFmt(d.now));
+    if(st.mode==='A')showOfficial();
   }
   async function load(){
     $('refresh').disabled=true;
@@ -194,14 +220,22 @@
     } catch(err){message('Impossible de récupérer l’état du dashboard : '+String(err.message||err),'error');}
     finally{$('refresh').disabled=false;}
   }
-  $('refresh').addEventListener('click',()=>{load();loadPlacement();});
+  $('refresh').addEventListener('click',()=>{load();if(st.mode==='B')loadExplore();});
   $('period').addEventListener('change',()=>{$('custom-range').hidden=$('period').value!=='custom';if($('period').value!=='custom')load();});
   ['range-start','range-end'].forEach(i=>$(i).addEventListener('change',load));
   document.querySelectorAll('.nav-link').forEach(link=>link.addEventListener('click',()=>{
     document.querySelectorAll('.nav-link').forEach(x=>x.classList.remove('selected'));
     link.classList.add('selected');
   }));
-  load();initPlacement();
+  $('mode-a').addEventListener('click',()=>setMode('A'));$('mode-b').addEventListener('click',()=>setMode('B'));
+  $('pl-hour').addEventListener('change',()=>{st.hour=Number($('pl-hour').value);loadExplore();});
+  $('pl-seg').addEventListener('change',()=>{st.seg=$('pl-seg').value;loadExplore();});
+  $('pl-prev').addEventListener('click',()=>{if(st.hour==null)return;if(st.hour===0){st.hour=23;st.weekday=(st.weekday+6)%7;}else st.hour--;loadExplore();});
+  $('pl-next').addEventListener('click',()=>{if(st.hour==null)return;if(st.hour===23){st.hour=0;st.weekday=(st.weekday+1)%7;}else st.hour++;loadExplore();});
+  $('pl-now').addEventListener('click',()=>{st.weekday=null;st.hour=null;loadExplore();});
+  $('bm-range').addEventListener('change',()=>{if(dataset)trendCharts(dataset);});
+  load();
+  {const m=location.hash.match(/^#explorer(?:\/([0-6])\/(\d{1,2}))?$/);if(m){if(m[1]!=null){st.weekday=Number(m[1]);st.hour=Math.min(23,Number(m[2]));}setMode('B');}}
   // Vue ouverte : actualisation légère toutes les 5 minutes. Le VPS continue à synchroniser sans navigateur.
-  setInterval(()=>{load();loadPlacement();},5*60*1000);
+  setInterval(()=>{load();if(st.mode==='B')loadExplore();},5*60*1000);
 })();
