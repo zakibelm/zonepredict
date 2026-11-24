@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
 from . import storage
-from .predict import recurrence_matrix
+from .predict import recurrence_matrix, coverage_level
 from .engine import heartbeat,backfill,DataTaxiReader
 
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
@@ -90,8 +90,9 @@ def dashboard(period:str=Query("7d",pattern="^(today|yesterday|week|month|7d|30d
     active=next((f for f in forecasts if f["target_start"]<=now.strftime("%Y-%m-%d %H:%M:%S")<f["result"]["target_end"]),None)
     upcoming=next((f for f in reversed(forecasts) if f["target_start"]>now.strftime("%Y-%m-%d %H:%M:%S")),None)
     evaluations=storage.get_evaluations(settings.db_path,limit=50)
-    totalknown=sum(x["result"]["observed_known_zone"] for x in evaluations)
-    matches=sum(x["result"]["matched_zone_and_bin"] for x in evaluations)
+    evaluable=[x for x in evaluations if x["result"].get("evaluable",True)]
+    totalknown=sum(x["result"]["observed_known_zone"] for x in evaluable)
+    matches=sum(x["result"]["matched_zone_and_bin"] for x in evaluable)
     sync=storage.get_sync(settings.db_path)
     total=len(ev)
     stat=storage.get_stats(settings.db_path)
@@ -107,12 +108,29 @@ def dashboard(period:str=Query("7d",pattern="^(today|yesterday|week|month|7d|30d
       "zones":[{"zone":k,"count":n} for k,n in sorted(zones.items(),key=lambda x:-x[1])],
       "heatmap":[{"weekday":day,"hour":hour,"count":n} for (day,hour),n in hmap.items()],
       "forecast":{"current":active,"upcoming":upcoming,"history":forecasts[:16]},
-      "comparison":{"evaluated_slots":len(evaluations),"known_zone_events":totalknown,"zone_bin_matches":matches,
+      "coverage":coverage_summary(now),
+      "comparison":{"evaluated_slots":len(evaluable),"not_evaluable_slots":len(evaluations)-len(evaluable),"known_zone_events":totalknown,"zone_bin_matches":matches,
                     "coverage_pct":round(matches*100/totalknown,1) if totalknown else None,
                     "calibrated_confidence":None,"note":"Audit provisoire : couverture de capture non établie; valeur = part d'appels dans des cellules signalées, pas probabilité."},
       "evaluations":evaluations[:12],
       "source_caution":"Aucune destination inventée. Pas de zéro imputé aux créneaux sans capture. Les prévisions sont figées à :50."
     }
+
+def coverage_summary(now):
+    """Couverture de la tablette par heure sur 24 h : cases de 5 min où l'écran de Fraxion était lisible."""
+    since=storage.coverage_since(settings.db_path)
+    if since is None:
+        return {"since":None,"hours":[],"note":"Aucune preuve de couverture reçue : installer la dernière version de l'app DataTaxi."}
+    first=(now-timedelta(hours=23)).replace(minute=0,second=0,microsecond=0)
+    counts=storage.coverage_by_hour(settings.db_path,first.strftime("%Y-%m-%d %H:%M:%S"))
+    hours=[]
+    for i in range(24):
+        h=first+timedelta(hours=i);key=h.strftime("%Y-%m-%d %H:%M:%S")
+        if key<=since:level="inconnue";n=None
+        else:
+            n=counts.get(key,0);level=coverage_level(n)
+        hours.append({"hour":key[:16],"bins":n,"status":level})
+    return {"since":since,"hours":hours,"note":"Couverte : 9 cases de 5 min sur 12 ou plus. Partielle : 3 à 8. Non couverte : moins de 3."}
 
 @app.get("/api/placement")
 def placement(weekday:int|None=Query(None,ge=0,le=6),hour:int|None=Query(None,ge=0,le=23),segment:str=Query("weekday",pattern="^(weekday|all)$")):

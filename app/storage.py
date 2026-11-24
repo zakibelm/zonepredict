@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS forecasts (
   result_json TEXT NOT NULL,
   algorithm_version TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS coverage (
+  bin_start TEXT PRIMARY KEY,
+  first_seen TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS evaluations (
   target_start TEXT PRIMARY KEY REFERENCES forecasts(target_start),
   evaluated_at TEXT NOT NULL,
@@ -85,6 +89,9 @@ def persist_events(db_path,from_date,to_date, normalized):
         n_new=0
         try:
             for x in normalized:
+                if x.get("coverage"):
+                    db.execute("INSERT OR IGNORE INTO coverage(bin_start,first_seen) VALUES(?,?)",(x["bin_start"],dt))
+                    continue
                 if x.get("quarantined"):
                     db.execute("""INSERT INTO quarantine_events(row_hash,query_date,raw_time,raw_zone,raw_vehicle,raw_service,raw_status,reason,first_seen,last_seen)
                     VALUES(:event_key,:query_date,:raw_time,:raw_zone,:raw_vehicle,:raw_service,:raw_status,:reason,:timestamp,:timestamp)
@@ -94,9 +101,9 @@ def persist_events(db_path,from_date,to_date, normalized):
                 VALUES (:event_key,:event_date,:event_time,:request_zone,:raw_zone,:vehicle_id,:service_type,:status,:destination_zone,:category,:eligible,:excluded_reason,:timestamp,:timestamp)""",{**x,"timestamp":dt})
                 n_new+=c.rowcount
                 db.execute("UPDATE events SET last_seen=? WHERE event_key=?",(dt,x["event_key"]))
-            db.execute("UPDATE sync_runs SET state='success', completed_at=?,rows_returned=?,rows_new=? WHERE id=?",(nowiso(),len(normalized),n_new,run_id))
+            db.execute("UPDATE sync_runs SET state='success', completed_at=?,rows_returned=?,rows_new=? WHERE id=?",(nowiso(),sum(1 for x in normalized if not x.get("coverage")),n_new,run_id))
             db.commit()
-            return {"returned":len(normalized),"new":n_new,"run_id":run_id}
+            return {"returned":sum(1 for x in normalized if not x.get("coverage")),"new":n_new,"run_id":run_id}
         except Exception:
             db.rollback()
             raise
@@ -154,3 +161,20 @@ def get_stats(db_path):
         r=db.execute("SELECT COUNT(*) n,COUNT(DISTINCT event_date) dates,COUNT(DISTINCT request_zone) zones,SUM(eligible) eligible,MAX(event_date || ' ' || event_time) last_event FROM events").fetchone()
         q=db.execute("SELECT COUNT(*) AS quarantined FROM quarantine_events").fetchone()
     return {**dict(r),**dict(q)}
+
+
+def coverage_since(db_path):
+    """Première case de couverture reçue : avant, la couverture est inconnue (jamais déduite)."""
+    with connect(db_path) as db:
+        r=db.execute("SELECT MIN(bin_start) m FROM coverage").fetchone()
+    return r["m"] if r and r["m"] else None
+
+def coverage_count(db_path,start,end):
+    with connect(db_path) as db:
+        return db.execute("SELECT COUNT(*) n FROM coverage WHERE bin_start>=? AND bin_start<?",(start,end)).fetchone()["n"]
+
+def coverage_by_hour(db_path,since):
+    """Nombre de cases de 5 min par heure civile, à partir de `since` (« YYYY-MM-DD HH:MM:SS »)."""
+    with connect(db_path) as db:
+        rows=db.execute("SELECT substr(bin_start,1,13)||':00:00' h,COUNT(*) n FROM coverage WHERE bin_start>=? GROUP BY h",(since,)).fetchall()
+    return {r["h"]:r["n"] for r in rows}

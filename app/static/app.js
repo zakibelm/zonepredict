@@ -218,11 +218,18 @@
       $('bm-zones').innerHTML='<div class="empty">Aucune heure évaluée.</div>';
     }else{
       const r=ev.result,f=fcs.find(x=>x.target_start===ev.target_start)?.result,cells=f?.matrix||[],fort=cells.filter(c=>c.confidence==='Fort').length;
-      $('bm-tag').textContent=r.final?'Évaluation finale':'Provisoire';$('bm-tag').className='chip is-warn';
+      const cs=r.coverage_status||'inconnue';
+      $('bm-tag').textContent=cs==='couverte'?'Heure couverte':cs==='partielle'?'Couverture partielle':cs==='non couverte'?'Heure non couverte':'Couverture inconnue';
+      $('bm-tag').className='chip '+(cs==='couverte'?'is-good':cs==='non couverte'?'is-error':'is-warn');
       $('bm-slot').innerHTML=`<b>${esc(ev.target_start.slice(0,10))} · ${esc(ev.target_start.slice(11,16))}–${esc(r.target_end.slice(11,16))}</b>`;
+      if(r.evaluable===false){
+        $('bm-cards').innerHTML=`<div class="empty" style="grid-column:1/-1;min-height:70px">${esc(r.caution||'Heure non évaluable.')}</div>`;
+        $('bm-zones').innerHTML='<div class="empty">Aucune comparaison pour cette heure : la tablette ne lisait pas l’écran, donc l’absence d’appel enregistré n’est pas un zéro.</div>';
+        benchmarkPanes();return;
+      }
       $('bm-cards').innerHTML=`<div class="bm-col"><h4>Prévu</h4><b>${fmt(cells.length)}</b><span>cases signalées (${fmt(fort)} fortes)</span><small>Volume non estimé</small></div>
         <div class="bm-col"><h4>Vécu</h4><b>${fmt(r.observed_known_zone)}</b><span>appels avec zone connue</span><small>${fmt(r.observed_unknown_zone)} sans zone</small></div>
-        <div class="bm-col"><h4>Écart</h4><b>${fmt(r.matched_zone_and_bin)} / ${fmt(r.unanticipated_observed)}</b><span>annoncés / non annoncés</span><small>Écart de volume non calculable</small></div>`;
+        <div class="bm-col"><h4>Écart</h4><b>${fmt(r.matched_zone_and_bin)} / ${fmt(r.unanticipated_observed)}</b><span>annoncés / non annoncés</span><small>${r.cell_precision!=null?'Cases utiles : '+pct(r.cell_precision):'Écart de volume non calculable'}</small></div>`;
       const real=r.real_by_zone_bin||{},keys=new Map();
       cells.forEach(c=>keys.set(c.zone+'|'+c.bin,{zone:c.zone,bin:c.bin,pred:c,real:0}));
       Object.entries(real).forEach(([k,n])=>{const [z,b]=k.split('|');const o=keys.get(k)||{zone:z,bin:Number(b),pred:null,real:0};o.real=n;keys.set(k,o);});
@@ -250,10 +257,10 @@
       fcs.forEach((f,i)=>{let y=H-22;const x=L+i*step+3;['Faible','Moyen','Fort'].forEach(k=>{const n=(f.result.matrix||[]).filter(c=>c.confidence===k).length,hg=n/mx*(H-44);y-=hg;g+=`<rect x="${x}" y="${y}" width="${bw}" height="${hg}" fill="${col[k]}"><title>${f.target_start.slice(5,16)} · ${k} : ${n}</title></rect>`;});g+=`<text x="${x+bw/2}" y="${H-6}" font-size="11" fill="#9bb4c0" text-anchor="middle">${f.target_start.slice(11,13)}h</text>`;});
       box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Nombre de signaux Fort, Moyen et Faible par prévision">${g}</svg><div class="legend2"><span><i class="lg" style="background:#ff6b6b"></i>Fort</span><span><i class="lg" style="background:#f4be61"></i>Moyen</span><span><i class="lg" style="background:#6d8793"></i>Faible</span><span>Classement de récurrence, pas une probabilité</span></div>`;
     }else{
-      const pts=evs.filter(e=>e.result.observed_match_share!=null);
+      const pts=evs.filter(e=>e.result.evaluable!==false&&e.result.observed_match_share!=null);
       if(!pts.length){box.innerHTML='<div class="empty">Aucune heure évaluable sur cette période. Les heures sans évaluation restent vides, jamais à zéro.</div>';return;}
       const L=40,X=i=>pts.length===1?W/2:L+i/(pts.length-1)*(W-L-16),Y=v=>H-24-(v/100)*(H-44);
-      box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Part des appels annoncés par heure évaluée"><line x1="${L}" y1="${Y(0)}" x2="${W-8}" y2="${Y(0)}" stroke="#35515d"/><line x1="${L}" y1="${Y(100)}" x2="${W-8}" y2="${Y(100)}" stroke="#35515d" stroke-dasharray="3"/><text x="2" y="${Y(100)+4}" font-size="11" fill="#9bb4c0">100 %</text><text x="2" y="${Y(0)+4}" font-size="11" fill="#9bb4c0">0 %</text><polyline fill="none" stroke="#29e2df" stroke-width="2.5" points="${pts.map((e,i)=>X(i)+','+Y(e.result.observed_match_share)).join(' ')}"/>${pts.map((e,i)=>`<circle cx="${X(i)}" cy="${Y(e.result.observed_match_share)}" r="5" fill="#29e2df"><title>${e.target_start.slice(5,16)} · ${pct(e.result.observed_match_share)} annoncés · ${e.result.unanticipated_observed} non annoncés</title></circle>`).join('')}</svg><div class="legend2"><span>${pts.length} heure(s) évaluée(s)</span><span>Provisoire : couverture non établie</span></div>`;
+      box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Part des appels annoncés par heure évaluée"><line x1="${L}" y1="${Y(0)}" x2="${W-8}" y2="${Y(0)}" stroke="#35515d"/><line x1="${L}" y1="${Y(100)}" x2="${W-8}" y2="${Y(100)}" stroke="#35515d" stroke-dasharray="3"/><text x="2" y="${Y(100)+4}" font-size="11" fill="#9bb4c0">100 %</text><text x="2" y="${Y(0)+4}" font-size="11" fill="#9bb4c0">0 %</text><polyline fill="none" stroke="#29e2df" stroke-width="2.5" points="${pts.map((e,i)=>X(i)+','+Y(e.result.observed_match_share)).join(' ')}"/>${pts.map((e,i)=>`<circle cx="${X(i)}" cy="${Y(e.result.observed_match_share)}" r="5" fill="#29e2df"><title>${e.target_start.slice(5,16)} · ${pct(e.result.observed_match_share)} annoncés · ${e.result.unanticipated_observed} non annoncés</title></circle>`).join('')}</svg><div class="legend2"><span>${pts.length} heure(s) évaluée(s)</span><span>Heures non couvertes exclues</span></div>`;
     }
   }
   document.querySelectorAll('[data-bm]').forEach(b=>b.addEventListener('click',()=>{st.bmTab=b.dataset.bm;persist();benchmarkPanes();}));
@@ -268,8 +275,14 @@
   document.querySelectorAll('[data-st]').forEach(b=>b.addEventListener('click',()=>{st.stTab=b.dataset.st;persist();statsPanes();}));
 
   // ---------- Données ----------
+  function coverageStrip(c){
+    const box=$('cov-strip');if(!box)return;
+    if(!c||!c.hours||!c.hours.length){box.innerHTML='';$('cov-note').textContent=(c&&c.note)||'';return;}
+    box.innerHTML=c.hours.map(h=>`<div class="cov-cell ${h.status.replace(' ','-')}" title="${esc(h.hour)} · ${esc(h.status)}${h.bins!=null?' · '+h.bins+'/12 cases':''}">${h.bins!=null?h.bins:'?'}</div>`).join('')+'<div class="cov-axis" style="grid-column:1/-1">'+c.hours.map(h=>`<span>${h.hour.slice(11,13)}</span>`).join('')+'</div>';
+    $('cov-note').textContent=c.note||'';
+  }
   function render(d){
-    dataset=d;
+    dataset=d;coverageStrip(d.coverage);
     set('k-total',fmt(d.kpi.total_events));set('k-eligible',fmt(d.kpi.eligible_events));set('k-zones',fmt(d.kpi.active_zones));set('k-days',fmt(d.kpi.days_observed));
     const sync=d.source?.last_sync;
     if(sync?.state==='success')message(`À jour · dernier appel ${d.source.last_event||'inconnu'}`,'good');

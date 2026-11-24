@@ -124,6 +124,16 @@ def normalize(row: dict) -> dict:
                 destination_zone=destination,category=category,excluded_reason=reason,
                 eligible=0 if reason else 1)
 
+COVERAGE_TYPE="__couverture__"
+
+def is_coverage(row:dict)->bool:
+    """Ligne de preuve de couverture envoyée par la tablette : jamais un appel."""
+    return str(_pick(row,"service") or "").strip().lower()==COVERAGE_TYPE
+
+def coverage_record(row:dict)->dict:
+    e=normalize(row)
+    return {"coverage":True,"bin_start":f"{e['event_date']} {e['event_time']}","event_date":e["event_date"]}
+
 def quarantine(row:dict, query_date:str, reason:str) -> dict:
     """Conserve un événement incomplet hors calcul sans journaliser des adresses ou champs privés."""
     hashed=hashlib.sha256(json.dumps(row,sort_keys=True,ensure_ascii=False,default=str).encode()).hexdigest()

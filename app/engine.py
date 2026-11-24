@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import httpx
 from .config import Settings
-from .normalizer import normalize, unpack, quarantine, _pick, SchemaError
+from .normalizer import normalize, unpack, quarantine, _pick, SchemaError, is_coverage, coverage_record
 from . import storage
 from .predict import make_forecast, evaluate, target_for_forecast
 
@@ -49,6 +49,13 @@ class DataTaxiReader:
                 raise ApiUnavailable("Réponse paginée : prise en charge de pagination requise")
         normalized=[];quarantined=0
         for row in rows:
+            # Preuve de couverture de la tablette : enregistrée à part, jamais comptée comme un appel.
+            if is_coverage(row):
+                c=coverage_record(row)
+                if c["event_date"]!=day.isoformat():
+                    raise SchemaError("L'API ne respecte pas le filtre de date : résultat refusé")
+                normalized.append(c)
+                continue
             # Lignes sans date/heure : conserver en quarantaine, hors prédiction.
             if _pick(row,"date") is None or _pick(row,"time") is None:
                 quarantined+=1
@@ -58,7 +65,7 @@ class DataTaxiReader:
             if e["event_date"]!=day.isoformat():
                 raise SchemaError("L'API ne respecte pas le filtre de date : résultat refusé")
             normalized.append(e)
-        if normalized and quarantined==len(normalized):
+        if normalized and quarantined==len([x for x in normalized if not x.get("coverage")]) and quarantined>0:
             raise SchemaError("Tous les éléments sont incomplets : vérifier le contrat API avant d'enregistrer")
         return normalized
 
@@ -117,12 +124,15 @@ def update_evaluations(settings,now_local=None):
     now_local=now_local or datetime.now(settings.timezone)
     now_str=now_local.strftime("%Y-%m-%d %H:%M:%S")
     ev=storage.get_events(settings.db_path,eligible=True)
+    since=storage.coverage_since(settings.db_path)
     count=0
     for p in storage.get_forecasts(settings.db_path,limit=72):
         forecast=p["result"]
         end=datetime.fromisoformat(forecast["target_end"]).replace(tzinfo=settings.timezone)
         if now_local<end+timedelta(minutes=5):continue
-        result=evaluate(forecast,ev,now_local.isoformat(),storage.get_stats(settings.db_path).get("last_event"))
+        cov={"bins":storage.coverage_count(settings.db_path,forecast["target_start"],forecast["target_end"]),
+             "active":since is not None and forecast["target_start"]>since}
+        result=evaluate(forecast,ev,now_local.isoformat(),storage.get_stats(settings.db_path).get("last_event"),coverage=cov)
         storage.store_evaluation(settings.db_path,p["target_start"],result)
         count+=1
     return count

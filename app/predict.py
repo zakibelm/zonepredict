@@ -97,8 +97,21 @@ def make_forecast(history,target_local,issued_local):
       "algorithm_version":VERSION
     }
 
-def evaluate(forecast, observations, evaluated_at, last_source_at=None):
-    """Snapshot immuable en entrée. Jamais de 0 implicite sur un créneau non couvert."""
+COVERED_BINS=9      # sur 12 cases de 5 min : l'heure est « couverte »
+PARTIAL_BINS=3      # de 3 à 8 cases : « partielle »
+
+def coverage_level(bins):
+    """Niveau de couverture d'une heure d'après les cases de 5 min où l'écran était lisible."""
+    if bins>=COVERED_BINS:return "couverte"
+    if bins>=PARTIAL_BINS:return "partielle"
+    return "non couverte"
+
+def evaluate(forecast, observations, evaluated_at, last_source_at=None, coverage=None):
+    """Snapshot immuable en entrée. Jamais de 0 implicite sur un créneau non couvert.
+
+    `coverage` = {"bins": cases de 5 min lisibles dans l'heure, "active": preuve de couverture déjà reçue}.
+    Sans preuve (heure antérieure à la mise en service), la couverture est « inconnue » : une heure sans
+    aucun appel n'est alors pas évaluable, car on ne peut pas distinguer « aucun appel » de « tablette muette »."""
     start=forecast["target_start"];end=forecast["target_end"]
     observed=[e for e in observations if e["eligible"] and f"{e['event_date']} {e['event_time']}" >= start and f"{e['event_date']} {e['event_time']}" < end]
     targets={(c["zone"],c["bin"]):c for c in forecast["matrix"]}
@@ -119,15 +132,35 @@ def evaluate(forecast, observations, evaluated_at, last_source_at=None):
                 destComparable+=1
                 if e["destination_zone"] in [x["zone"] for x in pred["destinations"] if x["zone"]!="Inconnue"]:matchDest+=1
         else:miss+=1
+    bins=None
+    if coverage and coverage.get("active"):
+        bins=int(coverage.get("bins") or 0)
+        status=coverage_level(bins)
+        # Des appels observés prouvent que la tablette lisait, même si peu de cases sont arrivées.
+        if status=="non couverte" and observed:status="partielle"
+    else:
+        status="inconnue"
+    evaluable=status in ("couverte","partielle") or (status=="inconnue" and bool(observed))
+    flagged=len(targets)
+    cells_hit=sum(1 for (z,b) in targets if realByBin.get(f"{z}|{b}"))
+    caution={
+      "couverte":"Heure couverte : la tablette lisait l'écran presque tout le long. La comparaison est fiable pour cette heure.",
+      "partielle":"Heure partiellement couverte : des appels ont pu manquer. La comparaison est indicative.",
+      "non couverte":"Heure non couverte : la tablette ne lisait pas l'écran. Aucune comparaison : l'absence d'appel enregistré n'est pas un zéro.",
+      "inconnue":"Couverture inconnue (heure antérieure à la preuve de couverture). Comparaison provisoire; une heure sans appel n'est pas évaluable.",
+    }[status]
     return {
       "target_start":start,"target_end":end,"evaluated_at":evaluated_at,
       "observed_in_window":len(observed),"observed_known_zone":totalKnown,"observed_unknown_zone":unknown,
       "matched_zone_and_bin":hit,"unanticipated_observed":miss,
-      "observed_match_share":round(hit*100/totalKnown,1) if totalKnown else None,
+      "observed_match_share":round(hit*100/totalKnown,1) if (totalKnown and evaluable) else None,
+      "cells_flagged":flagged,"cells_with_calls":cells_hit,
+      "cell_precision":round(cells_hit*100/flagged,1) if (flagged and evaluable) else None,
       "destination_matches":matchDest,"destination_comparable":destComparable,
       "real_by_zone":dict(realByZone),"real_by_zone_bin":dict(realByBin),
       "by_type":dict(bytype),"predicted_volume":forecast["predicted_volume"],
       "volume_absolute_gap":None, "volume_percent_gap":None,
-      "coverage_status":"non établie", "final":False,
-      "caution":"Comparaison provisoire: l'API ne prouve pas l'exhaustivité. Un signal sans appel observé n'est pas un échec certain."
+      "coverage_status":status,"coverage_bins":bins,"evaluable":evaluable,
+      "final":status=="couverte",
+      "caution":caution
     }
