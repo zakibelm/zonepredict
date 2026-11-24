@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
 from . import storage
-from .predict import recurrence_matrix, coverage_level
+from .predict import recurrence_matrix, coverage_level, zones_to_target, volume_range
 from .engine import heartbeat,backfill,DataTaxiReader
 
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
@@ -152,6 +152,8 @@ def placement(weekday:int|None=Query(None,ge=0,le=6),hour:int|None=Query(None,ge
                 "history_dates":len(dates),"history_events":len(pool),
                 "coverage":"non établie : une date sans capture n'est pas un zéro","timezone":str(settings.timezone)},
       "matrix":cells,"zones":sorted({c["zone"] for c in cells},key=int),
+      "zones_to_target":zones_to_target(history,(now+timedelta(days=1)).strftime("%Y-%m-%d"),h,wd>=5),
+      "volume_range":volume_range(history,(now+timedelta(days=1)).strftime("%Y-%m-%d"),h,wd>=5),
       "official_forecast":published["result"] if published else None,
       "volume_estimate":None,"volume_reason":"Aucune preuve de couverture : aucun volume estimé",
       "note":"Récurrence historique (jour de semaine + heure choisis) ≠ prévision officielle figée à :50."}

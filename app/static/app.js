@@ -115,7 +115,7 @@
     st.snap=Math.max(0,Math.min(st.snap,list.length-1));
     const f=list[st.snap],r=f.result,h=Number(r.target_start.slice(11,13)),wd=(new Date(r.target_start.slice(0,10)+'T12:00:00').getDay()+6)%7;
     st.board={official:true,hour:h,cells:r.matrix||[],title:`${fullDays[wd]} · ${hh(h)} h – ${hh(h+1)} h`,
-      meta:`Figée à ${timeFmt(r.issued_at)} · ${fmt(r.historical_days_with_calls)} dates · ${r.segment?.startsWith('global')?'tous les jours':esc(r.segment||'')}`,reco:(r.placement||[]).map(z=>z.zone)};
+      meta:`Figée à ${timeFmt(r.issued_at)} · ${fmt(r.historical_days_with_calls)} dates · ${r.segment?.startsWith('global')?'tous les jours':esc(r.segment||'')}`,reco:(r.placement||[]).map(z=>z.zone),targets:r.zones_to_target,vol:r.volume_range,legacy:!('zones_to_target' in r)};
     renderBoard();
   }
   async function loadExplore(){
@@ -125,7 +125,7 @@
       const d=await r.json();st.weekday=d.query.weekday;st.hour=d.query.hour;persist();syncBar();
       const cells=d.matrix||[];
       st.board={official:false,hour:d.query.hour,cells,title:`${fullDays[d.query.weekday]} · ${hh(d.query.hour)} h – ${hh(d.query.hour+1)} h`,
-        meta:`${fmt(d.header.history_dates)} dates · ${fmt(d.header.history_events)} appels · ${d.query.segment==='weekday'?'même jour de semaine':'tous les jours'}`,reco:[...new Set(cells.filter(c=>c.confidence==='Fort').map(c=>c.zone))]};
+        meta:`${fmt(d.header.history_dates)} dates · ${fmt(d.header.history_events)} appels · ${d.query.segment==='weekday'?'même jour de semaine':'tous les jours'}`,reco:[...new Set(cells.filter(c=>c.confidence==='Fort').map(c=>c.zone))],targets:d.zones_to_target,vol:d.volume_range};
       renderBoard();
     }catch(e){st.board={empty:'Impossible de charger les récurrences ('+e.message+').',cells:[],hour:0};renderBoard();}
   }
@@ -134,11 +134,21 @@
   const keyOf=c=>c.zone+':'+c.bin;
   function refreshPlacement(){if(!st.board){st.mode==='A'?loadOfficial():loadExplore();}else renderBoard();}
   function perPage(){const h=$('pl-matrix').clientHeight;return h>60?Math.max(1,Math.floor((h-34)/56)):6;}
+  function renderTargets(B){
+    const box=$('pl-targets');if(!box)return;
+    if(B.legacy){box.innerHTML='<div class="tg-note">Prévision figée avant la version 3 : pas de zones à viser pour ce créneau. La matrice reste valable.</div>';return;}
+    const t=B.targets||[],v=B.vol||{};
+    const vol=v.low==null?`<span class="tg-vol"><b>Volume</b> ${esc(v.reason||'non estimé')}</span>`:`<span class="tg-vol"><b>Volume habituel</b> ${v.low} à ${v.high} appels <small>(médiane ${v.median}, ${plural(v.days,'jour','jours')} de ${esc(v.day_type)})</small></span>`;
+    if(!t.length){box.innerHTML=`<div class="tg-note">Aucune zone récurrente pour ce créneau. Ce n’est pas « zéro appel » : rien n’est enregistré.</div>${vol}`;return;}
+    box.innerHTML=`<span class="tg-h">Zones à viser</span>`+t.map((z,i)=>`<button type="button" class="tg ${z.advice?'fort':''}" data-z="${esc(z.zone)}" aria-label="Zone ${esc(z.zone)}, ${z.share} pour cent du poids historique"><b>${i+1}</b> Zone ${esc(z.zone)}<small>${z.share} % · ${plural(z.occurrences,'appel','appels')}${z.advice?' · Fort':''}</small></button>`).join('')+vol;
+    box.querySelectorAll('.tg').forEach(b=>b.addEventListener('click',()=>{const c=(B.cells||[]).filter(x=>x.zone===b.dataset.z).sort((a,c2)=>c2.occurrences-a.occurrences)[0];if(c){st.sel=keyOf(c);st.zone=0;persist();renderBoard();}}));
+  }
   function renderBoard(){
     const B=st.board;if(!B)return;
+    renderTargets(B);
     const nav=$('pl-prev');
     $('pl-info-pop').innerHTML=infoText();
-    if(B.empty){$('pl-title-line').innerHTML='';$('pl-matrix').innerHTML=`<div class="empty">${esc(B.empty)}</div>`;$('pl-pager').innerHTML='';$('pl-side').innerHTML='';return;}
+    if(B.empty){$('pl-title-line').innerHTML='';$('pl-targets').innerHTML='';$('pl-matrix').innerHTML=`<div class="empty">${esc(B.empty)}</div>`;$('pl-pager').innerHTML='';$('pl-side').innerHTML='';return;}
     const cells=visible(B.cells),zones=[...new Set(cells.map(c=>c.zone))].sort((a,b)=>Number(a)-Number(b)),h=B.hour;
     $('pl-title-line').innerHTML=`<b>${esc(B.title)}</b> · ${B.meta}${B.reco.length?` · <span class="reco-chip">zones fortes : <b>${B.reco.slice().sort((a,b)=>a-b).map(esc).join(' · ')}</b></span>`:''}`;
     if(!cells.length){
@@ -227,7 +237,15 @@
         $('bm-zones').innerHTML='<div class="empty">Aucune comparaison pour cette heure : la tablette ne lisait pas l’écran, donc l’absence d’appel enregistré n’est pas un zéro.</div>';
         benchmarkPanes();return;
       }
-      $('bm-cards').innerHTML=`<div class="bm-col"><h4>Prévu</h4><b>${fmt(cells.length)}</b><span>cases signalées (${fmt(fort)} fortes)</span><small>Volume non estimé</small></div>
+      if(f&&f.zones_to_target){
+        const zt=f.zones_to_target,vr=f.volume_range||{};
+        const volTxt=vr.low==null?'Pas de fourchette de volume':`Fourchette ${vr.low} à ${vr.high} appels`;
+        const inR=r.volume_in_range;
+        $('bm-cards').innerHTML=`<div class="bm-col"><h4>Prévu</h4><b>${zt.length?zt.map(z=>esc(z.zone)).join(' · '):'—'}</b><span>zones à viser</span><small>${volTxt}</small></div>
+        <div class="bm-col"><h4>Vécu</h4><b>${fmt(r.observed_in_window)}</b><span>appels dans l’heure</span><small>${fmt(r.observed_known_zone)} avec zone connue</small></div>
+        <div class="bm-col"><h4>Écart</h4><b>${r.zone_capture_share!=null?pct(r.zone_capture_share):'—'}</b><span>des appels dans les zones à viser</span><small>${inR==null?'Volume : pas de fourchette':inR?'Volume dans la fourchette':'Volume hors fourchette'} · cases utiles ${r.cell_precision!=null?pct(r.cell_precision):'—'}</small></div>`;
+      }else
+      $('bm-cards').innerHTML=`<div class="bm-col"><h4>Prévu</h4><b>${fmt(cells.length)}</b><span>cases signalées (${fmt(fort)} fortes)</span><small>Volume non estimé (prévision v2)</small></div>
         <div class="bm-col"><h4>Vécu</h4><b>${fmt(r.observed_known_zone)}</b><span>appels avec zone connue</span><small>${fmt(r.observed_unknown_zone)} sans zone</small></div>
         <div class="bm-col"><h4>Écart</h4><b>${fmt(r.matched_zone_and_bin)} / ${fmt(r.unanticipated_observed)}</b><span>annoncés / non annoncés</span><small>${r.cell_precision!=null?'Cases utiles : '+pct(r.cell_precision):'Écart de volume non calculable'}</small></div>`;
       const real=r.real_by_zone_bin||{},keys=new Map();

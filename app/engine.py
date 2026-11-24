@@ -117,7 +117,7 @@ def create_forecast_if_due(settings,now_local=None):
     cutoff=now_local.strftime("%Y-%m-%d %H:%M:%S")
     history=storage.get_events(settings.db_path,before=cutoff)
     result=make_forecast(history,target,now_local)
-    created=storage.store_forecast(settings.db_path,target.strftime("%Y-%m-%d %H:%M:%S"),now_local.isoformat(),cutoff,result)
+    created=storage.store_forecast(settings.db_path,target.strftime("%Y-%m-%d %H:%M:%S"),now_local.isoformat(),cutoff,result,version=result["algorithm_version"])
     return {"created":created,"target":target.isoformat(),"historical_events":len(history)}
 
 def update_evaluations(settings,now_local=None):
